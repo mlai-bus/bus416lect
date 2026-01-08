@@ -1,0 +1,96 @@
+---
+title: "Prob03-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Problem 1
+
+Get the necessary libraries.
+
+```{r}
+library(tidyverse)
+library(forecast)
+library(tsibble)
+library(feasts)
+library(fable)
+```
+
+Import the data and create a timeseries object. It is good to create a new project called 02-02-Ch3Prob where you are saving your files and working with data.
+
+If you have done that and saved the data files there, we can just do:
+
+```{r}
+app.ship.ds <- read_csv("ApplianceShipments.csv")
+
+glimpse(app.ship.ds)
+
+#convert Quarter from text to yearquarter and then use it to index the ts
+app.ship.ts <- app.ship.ds |> 
+  mutate(Quarter = yearquarter(Quarter)) |> 
+  as_tsibble(index = Quarter)
+
+glimpse(app.ship.ts)
+
+```
+
+So, we have 20 observations, from 1985 Q1 onwards. Let's use this in creating the ts object.
+
+```{r}
+
+# Use autoplot to plot this.
+autoplot(app.ship.ts) +
+  labs(title = "Appliance Shipments")
+```
+
+
+We can see some peaks and valleys with regular periodicity.
+
+Part C:
+
+We can approach is in two ways. A season plot plots each series against the seasons over which it is observed. Here, the seasons are quarters.
+
+```{r}
+app.ship.ts |> 
+  gg_season(Shipments)
+
+
+```
+
+In general, Q2 sees a spike.
+
+We can also plot yearly series separated by each quarter. This can easily done by `gg_subseries()` function.
+
+```{r}
+
+app.ship.ts |> 
+  gg_subseries(Shipments)
+
+library(lubridate)
+app.ship.ts1 <- app.ship.ts |> 
+  mutate(yr = year(Quarter),
+         qtr = quarter(Quarter))
+
+```
+
+Next, we want to aggregate the series on a yearly basis and then plot the total yearly shipments. All the `dplyr` functions will work with tsibble data. Instead of using `group_by()`, we will use `index_by()` for `tsibbles`.
+|
+
+```{r}
+library(lubridate)
+
+app.ship.ts1 <- app.ship.ts |> 
+  mutate(year = year(Quarter)) |> 
+  index_by(year) |> 
+  summarise(tot.ship = sum(Shipments))
+  
+  
+autoplot(app.ship.ts1) +
+  labs("Aggregated Yearly Shipments")
+
+```
+
+

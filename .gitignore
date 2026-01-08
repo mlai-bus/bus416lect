@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+
+# Conda / virtualenv
+.env
+.conda
+miniconda3/
+env/
+venv/
+
+# R
+.Rhistory
+.RData
+.Rproj.user/
+renv/library/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (optional – adjust as needed)
+
+# data/*.csv
+# data/*.parquet

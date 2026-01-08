@@ -1,0 +1,124 @@
+---
+title: "02-05-functional_prog"
+format: html
+editor: visual
+---
+
+## Functional Programming
+
+What if we wanted the mean or max value from **each column** of our dataframe? We will use the concept of functional programming to approach such problems.
+
+```{r}
+library(tidyverse)
+library(mlbadata)
+```
+
+A **functional** is a function that takes a function as an input and returns a vector as an output. Functional are used as a substitute for loops. For instance, to get the mean of each column of a data frame, we would write a for loop where the function `mean` will iterate over each column. Instead of a `for` loop, we will use the `map` function and it's family for such tasks.
+
+### `map()`
+
+`map()` takes a vector and a function, calls the function once for each element of the vector, and returns the results in a list.
+
+It's arguments are:
+
+```{r}
+args(map)
+```
+
+```{r}
+mydata <- tibble(one = 1:10, two = 11:20, three = 21:30)
+
+mydata |> 
+  map(mean)
+
+```
+
+Thus, the `map()` function takes a list and applies the requested function to every element of the list and returns a list. The following is a list of the `map` functions and their syntax. The first argument is always a data object and the second argument is the function applied *iteratively* to each element of the object.
+
+-   `map(.x, .f)` is the main mapping function and returns a list
+
+-   `map_df(.x, .f)` returns a data frame
+
+-   `map_dbl(.x, .f)` returns a numeric (double) vector
+
+-   `map_chr(.x, .f)` returns a character vector
+
+-   `map_lgl(.x, .f)` returns a logical vector
+
+We can use the `map_dbl()` function to obtain a named vector of doubles.
+
+```{r}
+mean_dbl <- mydata |> 
+  map_dbl( mean)  
+
+mean_dbl
+```
+
+To check the structure of this:
+
+```{r}
+str(mean_dbl)
+```
+
+The advantage of getting back a vector is that we can apply other vector functions on the output. For example, to take the mean of the means:
+
+```{r}
+ mydata |> 
+  map_dbl( mean)  |> 
+   mean()
+
+```
+
+The `map_` functions are quite helpful. Let's say we want to get a quick overview of the type of variables in a dataset.
+
+```{r}
+roxbury_df <- mlbadata::WestRoxbury
+roxbury_df |> 
+  map_chr(typeof)
+```
+
+`map()` is very flexible and we can create our own functions to apply iteratively to the dataframe.
+
+Suppose, we want to create a function that will triple each column of the dataset. Note that since we have only one line of operation in our function, we can omit `{}`.
+
+```{r}
+my_triple <- function(x) x * 3
+
+mydata |> 
+  map(my_triple)
+```
+
+If the function we want to apply is a one time ad hoc function, we can use the concept of `annonymous` functions. There is a special notation called *tilde-dot* (`~ .x`) notation.
+
+```{r}
+mydata |> 
+  map( ~.x * 3)
+```
+
+Let's unpack the above. We feed into `map` the data frame, `mydata`. `map` will iterate over each column of `mydata`. The `.x` takes each column of the data frame and applies the function given by the formula (`~`), which is `*3`. The result is a list.
+
+Suppose, we want to the returned output to be the same format as the input, ie., a data frame. We will use a variant of `map`, called `modify`.
+
+```{r}
+mydata |> 
+  modify(~ .x * 3)
+```
+
+#### Digression:
+
+In one of the previous applications, we had used `summarise(across(.))` to find mean and std deviation of two columns of the data set. However, if these columns have missing values, we will get errors. To avoid that, we often use na.rm = TRUE argument. First, see the version without `na.rm` option.
+
+```{r}
+roxbury_df |> 
+  group_by(REMODEL) |> 
+  summarise(across(contains("AREA"), list(mean = mean, stdev = sd)))
+```
+
+But if there was any missing value, the above code would not have run. A better approach is:
+
+```{r}
+roxbury_df |> 
+  group_by(REMODEL) |> 
+  summarise(across(contains("AREA"), list(mean = ~ mean(.x, na.rm = TRUE),
+                                          stdev = ~sd(.x, na.rm = TRUE))))
+```

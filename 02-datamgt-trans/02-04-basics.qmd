@@ -1,0 +1,169 @@
+---
+title: "02-04-basics"
+format: html
+editor: visual
+---
+
+## 02-04 Basics of setting up the data for ML
+
+Set up the libraries
+
+```{r}
+#| echo: true
+#| output: false
+library(tidyverse)
+library(readr)
+library(caret)
+library(mlbadata)
+library(fastDummies)
+library(broom)
+```
+
+Import the dataset
+
+```{r}
+housing_df <- mlbadata::WestRoxbury
+str(housing_df)
+```
+
+To see the variable names:
+
+```{r}
+names(housing_df)  # print a list of variables to the screen.
+t(t(names(housing_df)))  # print the list in a useful column format
+
+```
+
+## Creating factor and dummy variables
+
+The `REMODEL` column is character variable. We can convert it to a factor variable.
+
+```{r}
+housing_df$REMODEL <- factor(housing_df$REMODEL,
+                               levels = c("None", "Recent", "Old" ))
+
+str(housing_df)
+```
+
+Several algorithms require the conversion of factor variables to individual indicator columns. The first method is *one-hot encoding* where each category gets a column. We will use the `dummy_columns()` function from the `fastDummies` library.
+
+```{r}
+args(dummy_columns)
+```
+
+We can specify the columns we want to convert or we can let all factor/character columns be converted. The other three critical arguments are:
+
+```         
+remove_first_dummy = FALSE : Will remove the first category
+remove_most_frequent_dummy = FALSE: removes most frequent category
+remove_selected_columns = FALSE : removes the columns that created the dummies
+```
+
+They are set to false by default. For *one-hot encoding*:
+
+```{r}
+housing_df1 <- housing_df |> 
+  dummy_columns(remove_selected_columns = TRUE)
+str(housing_df1)
+```
+
+In the regression family models, including all the categories of a dummy variable results in perfect multicollinearity or the *dummy variable trap.* To avoid that, we can omit the first category or all indicator variables.
+
+```{r}
+housing_df2 <- housing_df |> 
+  dummy_columns(remove_selected_columns = TRUE,
+                remove_first_dummy = TRUE)
+str(housing_df2)
+```
+
+Note: If we wanted to remove any other category, we could re-level the data first and make that category as the first category.
+
+## Data Partitioning
+
+There are several methods to partitioning the data in training and validation. We will use the method from `caret` library. To replicate the results, use `set.seed()` function. We will do a 80-20 split. We will use the second dataset created above.
+
+```{r}
+set.seed(1234)
+trainind <- createDataPartition(housing_df$TOTAL.VALUE,
+                                p = 0.8, list = F)
+train_df <- housing_df2[trainind, ]
+test_df <- housing_df2[-trainind, ]
+```
+
+The training set will be used to build the model and test set will be used to evaluate model performance.
+
+## Basic Multiple Regression
+
+Let us run a very basic regression model. The interface we will use will be the formula interface where the dependent variable is specified on the left and independent variables on the right, separated by `~`.
+
+```{r}
+reg1 <- lm(TOTAL.VALUE ~ LOT.SQFT + LIVING.AREA, data = housing_df2)
+summary(reg1)
+tidy(reg1)
+```
+
+`model |> tidy()`gives the regression output. The fit statistics can be obtained by `glance()`
+
+```{r}
+reg1 |> glance() 
+```
+
+To add interaction effects:
+
+```{r}
+reg2 <- lm(TOTAL.VALUE ~ LOT.SQFT*LIVING.AREA, data = housing_df2) 
+reg2 |> 
+  tidy()
+reg2 |> 
+  glance()
+```
+
+If we wanted only the interaction effect,
+
+```{r}
+lm(TOTAL.VALUE ~ LOT.SQFT:LIVING.AREA, data = housing_df2) |> 
+  tidy()
+
+```
+
+To exclude some variables:
+
+```{r}
+lm(TOTAL.VALUE ~ . -YR.BUILT -TAX , data = housing_df2) |> 
+  tidy()
+```
+
+Putting a `.` after the `~` includes all the variables in the dataset.
+
+#### Obtaining the predicted values and residuals
+
+```{r}
+reg3 <- lm(TOTAL.VALUE ~ . -YR.BUILT -TAX , data = train_df)
+
+```
+
+By clicking on the reg3 object, we see that a lot of sub-objects are created. `reg3$coefficients` gives us the coefficient estimates, `reg3$fitted.values` gives us the predictions of `TOTAL.VALUE` and `reg3$residuals`gives us the residuals.
+
+We can create a dataframe of these objects or `augment()` them to the dataset.
+
+```{r}
+train_predict <- augment(reg3) 
+
+# To only keep certain columns
+train_predict |> 
+  select(TOTAL.VALUE, .fitted, .resid)
+```
+
+To predict the outcome on the test dataset:
+
+```{r}
+#option 1:
+test_pred <- predict(reg3, newdata = test_df)
+head(test_pred)
+```
+
+```{r}
+#option 2
+test_pred2 <- augment(reg3, newdata = test_df)
+str(test_pred2)
+```

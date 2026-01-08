@@ -1,0 +1,197 @@
+---
+title: "01-01-intro"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+## R as a *Sophisticated* Calculator
+
+```{r}
+
+```
+
+this is *text* and this is **bold**
+
+```{r}
+2+2
+```
+
+```{r}
+exp(4)
+```
+
+```{r}
+1 + 2
+
+exp(1)
+
+log(exp(1))
+
+2^3
+```
+
+### Vectors
+
+`r` is a vectorised language. Vector is a collection of objects. R can do operations on the element level in a vector. A vector is created using the `c()` where elements are separated by a comma.
+
+------------------------------------------------------------------------
+
+```{r}
+x <- c(1, 3, 4, 8, 16, 31.99 , 5 )
+
+sum(x)
+x
+str(x)
+length(x)
+
+ x1 <- 5*x
+ 
+ x1
+ 
+ 5*x +2
+ 
+ # These are comments
+ # we can generate a sequence and then do computations
+ 
+ x_1 <- 1:7 * x* 7:1
+ 
+ log(x)
+```
+
+### Some other useful code snippets
+
+```{r}
+###################################################
+### subsetting
+###################################################
+x[c(1, 4)]
+x[-c(2, 3, 5)]
+
+x[c(2, 3, 5)]
+
+###################################################
+###  patterned
+###################################################
+ones <- rep(1, 10)
+ones
+rep1 <- print(rep(c(1,2,3), each =2))
+
+rep2 <- print(rep(c(1,2,3), 2))
+
+rep3 <- print(rep(c(1,2,3), c(3,2,1)))
+rep3
+
+ seq(from = 2, to = 20, by = 7)
+
+
+trend <-   1981:2005
+trend
+rm(trend)
+```
+
+### R Objects
+
+Let us work with some data and packages. Packages are user written codes with extend R's functionality beyond the base version and make it one of the most powerful tools for data analysis. New packages need to be installed first but once they are installed on your system, they just need to be loaded once per session.
+
+```{r }
+#install.packages("tidyverse")
+#install.packages("dplyr")
+#install.packages("gapminder")
+#install.packages("hablar")
+
+library(tidyverse)
+library(dplyr)
+library(gapminder)
+library(hablar)
+library(skimr)
+#life.expt <- read_csv("life.expt.csv")
+life.expt <- gapminder::gapminder
+#life.expt1 <- read.csv("life.expt.csv")
+
+# or
+
+#View(life.expt)
+head(life.expt)
+tail(life.expt)
+str(life.expt)
+skim(life.expt)
+glimpse(life.expt)
+
+class(life.expt)
+# tibble vs a dataframe
+print(life.expt)
+
+#We can access columns with the $ function
+
+# mean(lifeExp)
+mean(life.expt$lifeExp)
+
+#Let us convert regions to factors and gdp as numeric
+str(life.expt)
+
+life.expt <- life.expt %>% 
+        convert(fct(continent),
+                num(year))
+str(life.expt)
+class(life.expt$continent)
+```
+
+### Indexing and subsetting
+
+R has some really useful tools for indexing. Notice the difference between indexing with \[\] vs the accessor function `$`. With the latter, `R` simplifies the dimension, while in the first case, we get back another tibble.
+
+```{r}
+#Get the 4th column
+str(life.expt[,4])
+str(life.expt$lifeExp)
+
+sort(life.expt[,4]) # does not work
+
+#sort is a function that works on vectors and not on data frames or tibbles
+sort(life.expt$lifeExp)
+
+# Same as life.expt$lifeExp
+
+# we can sort it.
+sort(life.expt$lifeExp)
+
+# Does not help us in identifying any country.
+# Create a new vector x vector
+
+x <- runif(10,1, 100)
+?runif()
+x <- runif(max = 100, min = 1, n = 10)
+x <- runif(100,  1, 10)
+set.seed(9876) # this helps reproduce examples
+x <- runif(10,1, 100)
+x
+x <- ceiling(x) #rounds up to the nearest integer. 
+x #Note 13.27 becomes 14 (not 13)
+
+sort(x)
+index <- order(x)
+index
+x # order() returns the order of arrangement of the elements in ascending order
+
+x[index] # This  rearranges x based on the index
+
+rank(x) #rank tells us where exactly the elements belong in their relative position
+
+
+```
+
+`sort()` will simply sort the data and `order()` provides the index from column. Also, `order(-x)` provides order in descending order.
+
+Let's see only the countries from Africa who have much lower life expectancy (less than 45 years)
+
+```{r }
+africa <- life.expt$continent =="Africa"
+poor.health <- life.expt$lifeExp < 45
+
+ind <- africa & poor.health # this is a logical function. Returns TRUE or FALSE
+ind
+life.expt[ind, ]
+```
+
+**Get's the job done** but later on we will see how easy it is to perform these operations using the ***tidyverse*** approach!

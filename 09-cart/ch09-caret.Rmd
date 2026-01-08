@@ -1,0 +1,559 @@
+---
+title: "Chap 09:CART"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This file introduces classification trees using the `rpart` package. After creating default trees, `cart` is implemented in  `caret`. `caret` is basically a machine learning environment which is a wrapper for more than 60 individual r packages and aims to provide a common framework for implementing these algorithms using a unifying syntax. Though `caret` was introduced earlier, here we develop a basic understanding of the syntax and this can be used to fit a variety of machine learning models. Specifically, we will cover the following topics:
+
+1. Use of the `trainControl()` function.
+
+1. Carry out a k-fold cross validation approach (note logistic regression with use the `createDataPartition()` function.)
+
+1. Use of the `preProcess()` function in the training set, if any.
+
+1. Use cross validation to find the best model.
+
+1. Search for a less complex model using various tolerance values.
+
+Note:To install all the libraries needed by `caret` upfront, use the command:
+
+`install.packages("caret", dependencies = c("Depends", "Suggests"))`
+
+
+
+```{r}
+library(caret)
+library(mlbench)
+library(tidyverse)
+library(skimr)
+library(rpart.plot)
+library(mlbadata)
+
+
+
+mower.df <- mlbadata::RidingMowers
+str(mower.df)
+skim(mower.df)
+
+mower.df$Ownership <- factor(mower.df$Ownership,
+                                levels = c("Owner", "Nonowner"))
+
+str(mower.df)
+
+```
+
+Data with 3 features and two levels to classify. Note that by default, for most algorithms in `caret`, the first level in alphabetical term becomes the target group. So always relevel your data so that the first level is the class of interest.
+
+One big question is whether to standardize data before or after the train-test split. Transformations should happen __after__ the split and should be done on the training set (set used to fit the model). The standardization parameters should then be applied to the validation set. 
+
+The rationale for this is that validation set it totally new and unseen data. So nothing from it should influence model building process.
+
+However, for tree based models, we do not need to standardize the data. 
+
+We next split the data in train and test set. Use the `createDataPartition()` function from `caret()` as it will mantain the class distribution in both, training and test sets.
+
+
+```{r}
+
+
+set.seed(107)
+trainRows <- createDataPartition(
+  y = mower.df$Ownership,
+  p = 0.75,
+  list = F
+)
+
+str(trainRows)
+
+train.df <- mower.df[trainRows, ]
+test.df <- mower.df[-trainRows, ]
+nrow(train.df)
+
+```
+
+We will create a classification tree with `maxdepth = 2` using `caret`.
+
+In `caret` we first use the `trainControl()` function to define the type of sampling  using the `method=` argument and other model tuning parameters. However, we will first run a tree without any resampling and just run one tree.
+
+```{r}
+
+cntrl <- trainControl(method = "none")
+
+                      
+tree.tune <- expand.grid(maxdepth =2 ) 
+
+# how does expand grid work?
+expand.grid(n =(2:5), m = c(7,9, 10) )
+
+#though expand.grid is an overkill here, good to develop this habit
+                                            
+
+
+tree.1 <- train(Ownership ~ ., 
+                data = mower.df,
+                method = "rpart2",
+                ##above lists the algorithm to use
+                trControl = cntrl,
+                ## This specifies the exact model(s) to evaluate
+                tuneGrid = tree.tune
+                )
+tree.1
+#observe the tree
+tree.1$finalModel
+
+#plot the tree
+rpart.plot(tree.1$finalModel)
+prp(tree.1$finalModel, type =1, extra = 1)
+
+
+g <- mower.df |> 
+      ggplot(aes(x = Income, y = Lot_Size)) +
+  geom_point(aes(color = Ownership))
+g
+
+g + geom_vline(xintercept = 74)
+
+```
+
+
+Typically, `caret` is used to training and cross-validating our models. Even the default setting in caret does a bootstrap sampling to generate 25 samples and tests 3 values of the the default tunig parameter of the specified method. After that, the tree is pruned by default.
+
+```{r}
+tree.2 <- tree.1 <- train(Ownership ~ ., 
+                data = mower.df,
+                method = "rpart")
+               
+tree.2
+prp(tree.2$finalModel, type =1, extra = 1)
+
+
+tree.3 <- tree.1 <- train(Ownership ~ ., 
+                data = mower.df,
+                method = "rpart2")
+tree.3
+prp(tree.3$finalModel, type =1, extra = 1)
+
+```
+
+
+Now, let us run the full tree. Note that `caret` will not run the full tree as the default is to prune the tree. Thus, the full tree will be run by the `rpart` package and the tuning values will be provided in the `rpart.control()` function.
+
+
+```{r}
+tree4.cntrl <- rpart.control(cp = 0,
+                          minsplit = 1) 
+
+tree.4 <- rpart(Ownership ~ ., 
+                data = mower.df,
+                control = tree4.cntrl,
+                method = "class" )
+
+#observe the tree
+tree.4
+
+#plot the tree
+
+prp(tree.4, type =1, extra = 1)
+
+g <- mower.df |> 
+      ggplot(aes(x = Income, y = Lot_Size)) +
+  geom_point(aes(color = Ownership))
+g
+g + geom_vline(xintercept = 60) +
+  geom_segment(x =0, xend = 60, y = 21, yend = 21) +
+  geom_segment( x = 60, xend = 110, y = 20, yend = 20) +
+  geom_segment( x = 85, xend = 85, y = 0, yend = 20) +
+  geom_segment( x = 62, xend = 62, y = 0, yend = 20) 
+
+
+```
+
+
+There is workaround in `caret` whereby we can supply the default tuning parameters from the method which is called.
+
+```{r}
+ tree.5 <- train(Ownership ~ ., 
+                data = mower.df,
+                method = "rpart",
+                control = tree4.cntrl ) # Note this step
+                                
+tree.5
+prp(tree.5$finalModel, type =1, extra = 1)
+```
+
+
+To classify a new record, we can drop it down the tree till we arrive at a decision node. We see that this tree has perfectly classified all the existing records. In classifying on new data however, this model may not do as well due to overfitting. Next we address the issue of overfitting and also work with a more realistic problem.
+
+
+###Acceptance of Personal Loan
+
+Universal Bank wants to analyze what factors make a customer more likely to accept a personal loan.
+
+```{r}
+
+bank.df <- mlbadata::UniversalBank
+skim(bank.df)
+#Let's remove ID and Zip
+
+bank.df <- bank.df %>% 
+  select(-c(1,5))
+
+# convert loan application to factor with 1 as the target class
+
+bank.df$Personal.Loan <- factor(as.character(bank.df$Personal.Loan),
+                                  levels = c("1", "0"),
+                                  labels = c("Yes", "No"))
+
+bank.df <- bank.df %>% 
+  rename(Loan = Personal.Loan )
+str(bank.df)
+
+#Do a 60-40 split
+
+table(bank.df$Loan)/nrow(bank.df) # check to proportion of Loan Acceptances
+
+#createDataPartition will try to maintain this ratio in training and valid
+set.seed(1)
+indTrain <- createDataPartition(bank.df$Loan, p = 0.6, times = 1, list = F)
+
+train.df <- bank.df[indTrain,]
+
+table(train.df$Loan)/nrow(train.df)
+table(train.df$Loan)
+
+valid.df <- bank.df[-indTrain,]
+table(valid.df$Loan)/nrow(valid.df)
+
+# thus, for unbalanced data, the above approach is desirable
+```
+
+
+
+
+Let us start by running the full tree to this data on the training set. 
+
+The `rpart()` method has a control function, `rpart.control()` with some preset default values. These values are passed on to the `rpart` call.
+
+The `rpart.control()` default values are:
+
+
+```{r echo=FALSE, eval= FALSE}
+
+rpart.control(minsplit = 20, minbucket = round(minsplit/3), cp = 0.01,
+  maxcompete = 4, maxsurrogate = 5, usesurrogate = 2, xval = 10,
+  surrogatestyle = 0, maxdepth = 30, ...)
+
+```
+
+
+Tuning is generally done by changing  `minsplit`, `cp` and `maxdepth`.
+
+
+
+```{r}
+cntrl <- rpart.control(minsplit = 1,
+                       cp = 0)
+full.tree.rpart <- rpart(Loan ~ ., data = train.df,
+                         method = "class",
+                         control = cntrl)
+
+prp(full.tree.rpart, type = 1, extra = 1)
+full.tree.rpart 
+```
+
+
+As we can see, the above tree is pretty nonsensical. It will do a good job of classifying all our training records but not do a good job of classifying new records. `caret` will not even allow the tree to go this deep.
+
+
+```{r}
+cntrl <- trainControl(method = "none")
+tree.1.train <- train(Loan ~ ., 
+                data = train.df,
+                method = "rpart",
+                control = rpart.control(cp = 0,
+                          minsplit = 1),
+                )# Note this step
+              
+tree.1.train$finalModel
+prp(tree.1.train$finalModel, type =1, extra = 1)
+```
+
+Note the above syntax. While ``caret` does not allow tuning on most of `rpart.control()`, parameters, a specific tree can be run by specifying `method = "none"` in `trainControl()` and then directly passing the syntax for rpart. Specifically,
+
+```
+ control = rpart.control(cp = 0,
+                          minsplit = 1) )
+```                          
+
+The crazy size of the tree can be addressed by pruning the tree. The default tree approach in `caret` is to prune the tree based on `Cp`, the complexity parameter. Basically, if accuracy does not improve beyond a certain threshold determined by Cp, the split at that node will not take place. Let us first run a basic pruned tree without any further parameter tuning. Below, we search for the Cp that provides the most accuracy in the training set.
+
+
+```{r}
+cntrl <- trainControl(method = "none")
+tree.2.train <- train(Loan ~ ., 
+                data = train.df,
+                method = "rpart",
+                tuneLength = 30)
+                
+tree.2.train
+
+tree.2.train$finalModel
+prp(tree.2.train$finalModel, type =1, extra = 2)
+
+```
+
+
+
+The above tree is the same as the default tree produced natively by rpart.
+
+
+
+```{r}
+
+# Default tree from rpart
+def.tree.rpart <- rpart(Loan ~ ., data = train.df, method = "class")
+prp(def.tree.rpart, type =1, extra = 2 )
+```
+
+
+
+Compare the performance of the full tree with the rpart default trees for both, training and validation sets.
+
+```{r}
+pred.Loan.full <- predict(full.tree.rpart, data = train.df, type = "class")
+
+confusionMatrix(pred.Loan.full, train.df$Loan)
+
+#Now on the validation set
+pred.Loan.full.val <- predict(full.tree.rpart, newdata = valid.df, type = "class")
+
+confusionMatrix(pred.Loan.full.val, valid.df$Loan)
+
+
+# Valid confusion matrix for the default tree
+pred.Loan.def1.val <- predict(def.tree.rpart , newdata = valid.df, type = "class")
+confusionMatrix(pred.Loan.def1.val, valid.df$Loan)
+
+```
+
+
+### Pruning a fully grown tree
+
+__ 1. Minimum error tree__
+
+We see that the default tree has slightly better accuracy than the full tree. The algorithm, however, stops the tree at some predetermined parameter values.
+
+Another option to avoid overfiting a tree is to grow the full tree and then prune it to the node that had the least error. These values are already provided in the return outpt of the full tree `full.tree.train$cptable`.
+
+```{r}
+full.tree.rpart$cptable
+```
+
+The lowest error is at 8 splits (or 9 terminal nodes), with the error of 0.177 and Cp value of 0.006944444. We can obtain that programatically as well:
+
+```{r}
+cpmin <-  full.tree.rpart$cptable[which.min(full.tree.rpart$cptable[, "xerror"]), "CP"]
+cpmin
+```
+
+This `mincp` value can be used to prune the tree.
+
+```{r}
+full.tree.prune <- prune(full.tree.rpart, cp = cpmin)
+
+prp(full.tree.prune, type = 1, extra = 1)
+
+```
+
+
+__ 2. Best-pruned Tree__
+
+Looking at the `cptable`, the standard deviation of min error is 0.02458495.
+We can compute the error within this  one standard deviation of the error and choose the simpler tree which has error within this range. In this case, 
+`r 0.177 + 0.0245`. Our tree with 3 decision nodes has error greater than the previous value. Thus, our minnimum error tree is also our best-pruned tree.
+
+
+
+
+### Classification Tree using `caret`
+
+The `caret` package can be used to make some improvements to the construction of classification trees. First, the above tree was sensitive to the particular sampling that we carried out. With a different sample, the splits could have happened at different points and even at different variables. Thus the above trees are rather unstable. 
+
+Secondly, by default, `rpart` does not do any tuning of parameters. 
+
+`caret` addresses these issues and also provides a wrapper for several other classification models. The default settings in `caret` is to resample the data 25 times using bootstrap sampling and then run the models with three values of the tuing parameter. For using the `rpart` method, this parameter is the `Cp`. It then chooses the Cp that provides the highest accuracy.
+
+
+```{r}
+tree.caret.def <- train(Loan ~ ., 
+                        data = train.df,
+                        method = "rpart")
+tree.caret.def
+
+```
+
+
+
+As we can see in the output above, 25 samples were taken with replacement, three different values of Cp were tried and the value that increased the accuracy was chosen.
+
+We can examine this tree.
+
+```{r}
+tree.caret.def$finalModel
+
+prp(tree.caret.def$finalModel, type = 1, extra = 1)
+```
+
+
+Let us check it's performance on the validation set.
+
+```{r}
+pred.Loan.def.val <- predict(tree.caret.def, newdata = valid.df)
+confusionMatrix(pred.Loan.def.val,
+                valid.df$Loan)
+
+```
+
+
+We could also tune over the depth of the tree by using the  `maxdepth` argument in `method = "rpart2" `call.
+
+
+```{r}
+tree.caret.def2 <- train(Loan ~ ., 
+                        data = train.df,
+                        method = "rpart2",
+                        tuneLength = 15) #The default is to choose over 3 sizes. 
+# we changed it to 15.
+tree.caret.def2
+
+prp(tree.caret.def2$finalModel, type = 1, extra = 2)
+```
+
+
+Note: the above is the same as the default tree by `rpart`.
+
+
+One drawback however is that these trees depend on the initial random split of the sample and may be different if another sample was chosen. All the above trees are thus unstable.
+
+Instability can be avoided by slicing the training set into a model building set and a holdout sample, building the model on the available data, check accuracy on the holdout sample and then repeat the process k times. This is called k-fold cross validation. This can then be repeated n times. `caret` makes it rather easy to implement this. 
+
+Another modification we will do is to tune the model using the ROC metric, rather than accuracy. Finally, we will search over 10 values of Cp. 
+
+```{r}
+cntrl <- trainControl(method = "repeatedcv", 
+                      number = 10, repeats = 3,
+                      classProbs = T,
+                      summaryFunction = twoClassSummary)
+
+tree.caret.cv <- train(Loan ~ . ,
+                       data = train.df,
+                       method = "rpart",
+                       trControl = cntrl,
+                       tuneLength = 10,
+                       #Use the ROC metric
+                       metric = "ROC"
+                       )
+
+tree.caret.cv
+tree.caret.cv$finalModel
+
+prp(tree.caret.cv$finalModel, type = 1, extra  = 2)
+```
+
+This is still a pretty extensive tree. We can get the best pruned tree using the argument: `method = rpart1SE`
+
+```{r}
+cntrl <- trainControl(method = "repeatedcv", 
+                      number = 10, repeats = 3,
+                      classProbs = T,
+                      summaryFunction = twoClassSummary)
+
+tree.caret.cv <- train(Loan ~ . ,
+                       data = train.df,
+                       method = "rpart1SE",
+                       trControl = cntrl,
+                        tuneLength = 10,
+                       #Use the ROC metric
+                       metric = "ROC"
+                       )
+
+tree.caret.cv
+tree.caret.cv$finalModel
+
+prp(tree.caret.cv$finalModel, type = 1, extra  = 2)
+```
+
+
+Or, we can stay with the default tree from caret
+
+```{r}
+cntrl <- trainControl(method = "repeatedcv", 
+                      number = 10, repeats = 3,
+                      classProbs = T,
+                      summaryFunction = twoClassSummary)
+set.seed(1089)
+tree.caret.def.cv <- train(Loan ~ . ,
+                       data = train.df,
+                       method = "rpart1SE",
+                       trControl = cntrl,
+                      # tuneLength = 10,
+                       #Use the ROC metric
+                       metric = "ROC"
+                       )
+
+tree.caret.def.cv
+tree.caret.def.cv$finalModel
+
+prp(tree.caret.def.cv$finalModel, type = 1, extra  = 2, roundint=FALSE)
+```
+
+
+Let us next get the ROC and AUC information. For the `roc` curve, the function expects probabilities of the predicted class. 
+
+```{r}
+
+library(pROC)
+pred.class <- predict(tree.caret.def.cv, newdata = valid.df)
+
+head(pred.class)
+
+pred.class.prob <- predict(tree.caret.def.cv, newdata = valid.df, type = "prob")
+head(pred.class.prob) # Note: This produces a dataframe
+
+confusionMatrix(pred.class, valid.df$Loan)
+
+### roc considers the first level as control and the second level as the target
+### thus we need to relevel the outcome variable
+
+roc.cart1 <- roc(response = valid.df$Loan,
+               predictor = pred.class.prob$Yes,
+               levels = rev(levels(valid.df$Loan)),
+               plot = F, add = TRUE)
+
+
+auc(roc.cart1)
+plot(roc.cart1, legacy.axes = T, print.auc = T)
+
+
+```
+
+
+We can also plot the lift charts. Note that we need to get the actual class and predicted probability in the same dataframe for `lift_curve()` in `yardstick` package.
+
+```{r}
+lift.data1 <- cbind(data.frame(truth = valid.df$Loan), 
+                    data.frame(rpart.class =pred.class.prob$Yes))
+
+library(yardstick)
+
+rpart.lift <- lift_curve(lift.data1, truth, rpart.class)
+autoplot(rpart.lift)
+```
+
+

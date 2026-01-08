@@ -1,0 +1,216 @@
+---
+title: "sec10-5"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Set up the environment and data.
+
+```{r}
+library(tidyverse)
+library(gains)
+library(caret)
+library(yardstick)
+library(broom)
+library(lubridate)
+library(stringr)
+library(forcats)
+library(patchwork)
+```
+
+Convert status to a qualitative variable and make delayed as the first category.
+
+```{r}
+
+
+fl.df <- read.csv("FlightDelays.csv")
+glimpse(fl.df)
+
+
+unique(fl.df$Flight.Status)
+fl.df$Flight.Status <- factor(fl.df$Flight.Status,
+                                      level = c("ontime", "delayed"))
+
+
+```
+
+Next, we want to convert the `CRS_DEP_TIME` column into a time column. This needs a few steps. 
+
+1. Since this column is an integer using millitary time (630 or 1445, for example), we need to make all fields four digits by padding the three digit times with 0. This will also convert this vector to charecter. 
+
+2. Next, we wil use `strptime()`, a built in `R` function to convert character to time. Since we do not have any date given, it will add the current date. We could leave the date there. However, it is not the correct date. `format()` is generally used to extract the componets of a date-time object.
+
+3. The problem with format is that it returns a charecter object, not a date object. So, we can covert the charecter to time using `hm()` from `lubridate` package, which is also a part of `tidyverse`.
+
+
+
+```{r}
+
+fl.df <- fl.df |> 
+  mutate(dep_tm = str_pad(CRS_DEP_TIME, 4, pad = "0"),
+         dep_tm =strptime(dep_tm, format = "%H%M"),
+         dep_timef = hm(format(dep_tm, format = "%H:%M")),
+         dep_hr = factor(hour(dep_timef)))
+  
+```
+
+
+In the last step above, `hour()` function extracted the hour of departure from the time object and then we converted it to a factor variable.
+
+If we did not want to do any time computations on the departure time but just get the hour of the departure and make it a factor, we could do it in one line.
+
+```{r}
+fl.df$dep_hrnew <- factor(fl.df$CRS_DEP_TIME %/% 100)
+```
+
+So why the go through the trouble above? _lubridate()_
+
+It help us handle date and time. We will convert `FL_DATE` from character to date and then extract the week day and date fields. Also, create factors of Origin, Destination, Weather
+
+```{r}
+
+
+fl.df <- fl.df |> 
+  mutate(dep_date = mdy(FL_DATE),
+         dep_wday = factor(wday(dep_date, abbr =  F)),
+         ORIGIN = relevel(factor(ORIGIN), "IAD"),
+         DEST = relevel(factor(DEST), "LGA"),
+         CARRIER = relevel(factor(CARRIER), "US"),
+         Weather = relevel(factor(Weather), "1"))
+
+str(fl.df)
+
+
+```
+
+
+Now some graphs. We want to see the relationship between delay and some explanatory variables. There is a subtle nuance though. Do we plot the number of delayed flights per day or the % of flights delayed per day? For example consider this example:
+
+
+
+```{r}
+
+set.seed(456)
+toy.df <- data.frame( day = factor(rep(c("Sun", "Mon", "Tue"), c(20, 10,4)),
+                             levels = c("Sun", "Mon", "Tue")),
+                      delay = sample(c(1,1, 0), size = 34, replace = T))
+
+
+toy.df |> 
+  group_by(day) |> 
+  summarise(ct_delay = sum(delay),
+            avg_delay = mean(delay))
+  
+```
+
+Though Tuesday had only three flight that were delayed, they counted for 75% of Tuesday's flights. We can see this in the following viz as well.
+
+```{r}
+g1 <- ggplot(fl.df, aes(x = ORIGIN, fill = Flight.Status)) +
+  geom_bar(position = "fill") +
+  labs(title = "% of flights that are delayed")
+
+# vs
+
+g2 <- ggplot(fl.df, aes(x = ORIGIN, fill = Flight.Status)) +
+  geom_bar(position = "dodge") +
+  labs(title = "Number of flights that are delayed")
+
+g1 + g2
+```
+
+
+The call `position = "stack"` creates proportional bar charts. That is what we will use.
+
+
+```{r}
+g3 <- ggplot(fl.df, aes(x = dep_wday, fill = Flight.Status)) +
+  geom_bar( position = "fill")
+
+
+g4 <- ggplot(fl.df, aes(x = DEST, fill = Flight.Status)) +
+  geom_bar( position = "fill")
+
+
+g5 <- ggplot(fl.df, aes(x = CARRIER, fill = Flight.Status)) +
+  geom_bar( position = "fill")
+
+g6 <-  ggplot(fl.df, aes(x = Weather, fill = Flight.Status)) +
+  geom_bar(position = "fill" )
+  
+
+g7 <- ggplot(fl.df, aes(x = dep_hr, fill = Flight.Status)) +
+  geom_bar(position = "fill") +
+  coord_flip()
+
+(g1 + g4) / (g5 + g6) / (g7 + g3)
+```
+
+
+Now, let us build a logistic model and include all the factor variables. First keep only the relevant variables
+
+```{r}
+fl.df2 <- fl.df |> 
+  select(CARRIER, DEST, ORIGIN, Weather, Flight.Status,
+         dep_hr, dep_wday)
+
+set.seed(9876)
+trainInd <- createDataPartition(y = fl.df2$Flight.Status,
+                                p = 0.6,
+                                list = F)
+train.df <- fl.df2[trainInd, ]
+test.df <- fl.df2[-trainInd,]
+```
+
+
+
+###Logistic model
+
+
+```{r}
+mod.1 <- glm(Flight.Status ~ ., data = train.df, family = "binomial")
+
+#get the results
+summary(mod.1 )
+
+# We can obtain the odds ratio
+round(data.frame(odds.ratio = exp(coefficients(mod.1)),
+            coefficients(summary(mod.1))[, c(1,4)]), 4)
+
+#a better approach
+tidy(mod.1, exponentiate = T)
+```
+
+An odds ratio of more than 1, indicates that the covariate increases the odds of the event. For example, our default carrier is US Air. The value of odds ratio on CARRIERCO indicates that compared of US air, the odds of a delay from CO is almost 3 times.
+
+Odds ratio of 0.41 on Weekday 3 indicates that the odds of a delay on Tuesday are 60% lower than on a Sunday (base category).
+
+In terms of time, the base category is hour 06 or 6-7AM. For hour 19 or 7-8pm, the odds of delay are 2.8 time more than the base category.
+
+Interestingly, for these flights, Origin and Destination have to statistically effects on delays compared to the base category.
+
+Let's see how well this model does in predicting delays in the test set.
+
+```{r}
+test.pred <- predict(mod.1, type = "response", newdata = test.df)
+test.delay.pr <- factor(ifelse(test.pred > 0.5, "delayed", "ontime"))
+test.perf <- data.frame(pred.prob = test.pred,
+                        pred.delay = test.delay.pr,
+                        actual.delay = test.df$Flight.Status)
+str(test.perf)
+confusionMatrix(test.perf$pred.delay, test.perf$actual.delay, positive = "delayed")
+```
+
+
+```{r}
+fl.df |> 
+  group_by(CARRIER, ORIGIN) |> 
+  summarise(total = n()) |> 
+  pivot_wider(names_from = ORIGIN, values_from = total,values_fill = 0)
+```
+

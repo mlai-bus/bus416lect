@@ -1,0 +1,173 @@
+---
+title: "04-01-summ-cor"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Data Cleaning
+
+A first step to any analysis is examining the descriptive statistics from the dataframe and so some preliminary pre-processing.
+
+Load the required libraries
+
+```{r}
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(psych)
+library(hablar)
+library(skimr)
+```
+
+
+Load the dataset and convert two variable to factors. We will learn how to use the `apply()` family of functions which apply functions in r to various elements of a list.
+
+```{r}
+housing.df <- read.csv("BostonHousing.csv", stringsAsFactors = F) 
+
+# convert CHAS and CAT..MEDV to factors
+
+cols <- c("CHAS", "CAT..MEDV")
+housing.df[cols] <- lapply(housing.df[cols], factor, levels = c("1", "0"), 
+                           labels = c("Yes", "No"))
+
+```
+
+
+There are two factor variables in the above dataset: CHAS and CAT..MEDV. We first create a vector with these two columns and then apply (list apply) the factor function to the list of these two function. The syntax of `lapply()` funtion is:
+
+```
+lapply(X, FUN, …)
+```
+The `...` means that various arguments from the chosen `FUNC` can be passed here. Thus, we first made 1 as the first level and then addedd the labels Yes and No for 1 and 0 respectively.
+
+```{r}
+head(housing.df)
+```
+
+Looking at descriptive stats:
+
+```{r}
+summary(housing.df)
+# a better format
+skim(housing.df)
+
+# customize the output
+my_skim <- skim_with(numeric = sfl(p25 = NULL, p75 = NULL)) 
+#sfl: skim function list
+my_skim(housing.df)
+
+```
+
+
+We can also create pivot tables. Suppose we want to see average median price by RAD and Charles River.
+
+```{r}
+housing.df |> 
+  group_by( RAD, CHAS) |> 
+  summarise( Average.Value = mean(MEDV),
+             count = n())
+```
+
+
+Another critical aspect of pre processing is creating factor variables and interactions. Here, we have two dummy variables, CHAS and CAT..MEDV. Let us create a dummy variable for CHAS and the interaction of CHAS and ROOMS
+
+```{r}
+df1 <- dummyVars(~ CHAS + CHAS:RM, data = housing.df,
+                 fullRank = T)
+
+housing.df1 <- predict(df1, newdata = housing.df)
+```
+
+We can now create a new dataframe where we combine the new dataset with housing.df
+
+```{r}
+
+housing.df2 <- cbind(housing.df, housing.df1)
+housing.df2 <- housing.df2 |> 
+  select(-CHAS)
+```
+
+
+## Dimension reduction: Corrlelation analysis
+
+Having a high correlation between predictor variables can result in multicollinearity in regression based models. Before any modelling is undertaken. If two variables are highly correlated (say, above a certain threshold like 0.8), the one which is highly correlated with other variables should be removed.
+
+`caret` has a built in function, `findCorrelation()` which follows this algorithm in removing such highly correlated variables. 
+
+We will first apply some data cleaning methods. We will separate out our dependent variables (MEDV and CAT..MEDV) into a separate dataset, remove categorical variables from the the xvariable dataset and then compute correlations.
+
+```{r}
+yvars <- housing.df |> 
+  select(MEDV, CAT..MEDV)
+
+xvars <- housing.df |> 
+  select(-MEDV, -CAT..MEDV)
+
+xvarsnum <- xvars |> 
+  select_if(is.numeric) #CHAS will get ommited
+# if there were multiple categorical variables, we could have pulled them as !na.numeric or is.factor
+
+cor1 <- cor(xvarsnum)
+cor1
+
+corrplot(cor1)
+corrplot(cor1, method = "number")
+# organized by clusters of high correlation
+corrplot(cor1, order = "hclust" , method = "number")
+
+# This method is cool but gets hard to read with several variables.
+library(GGally)
+ggpairs(xvarsnum[, c(1, 3, 4, 6)])
+```
+
+We do see above that there are some variable with rather high pair wise correlation. Let's identify and remove them.
+
+```{r}
+high.corr <- findCorrelation(cor1, cutoff = 0.8)
+high.corr
+
+t(names(xvarsnum[high.corr]))
+
+#var is TAX. Next we remove it
+xvarfin <- xvarsnum[, -high.corr]
+```
+
+Combine this dataset with CHAS and MEDV
+
+```{r}
+df1 <- cbind(MEDV = yvars$MEDV, CHAS = xvars$CHAS, xvarfin)
+```
+
+Some prelim plots with selected variables:
+
+```{r}
+selected.vars <- c("MEDV", "CHAS" ,"RM", "ZN", "PTRATIO", "AGE", "CRIM")
+
+df2 <- df1[, selected.vars]
+for (i in 3:ncol(df2)) {
+  print(df2 |> 
+    ggplot(aes(x = df2[,i], color = CHAS)) +
+    geom_density() +
+    labs(x = colnames(df2[i])))
+    }
+
+for (i in 3:ncol(df2)) {
+  print(df2 |> 
+    ggplot(aes(y = MEDV, x = df2[,i])) +
+    geom_point() +
+    geom_smooth() +
+    labs(x = colnames(df2[i])))
+     }
+#box plots work with categorical x variables
+  df2 |> 
+    ggplot(aes(y = MEDV, x = CHAS)) +
+    geom_boxplot() 
+```
+

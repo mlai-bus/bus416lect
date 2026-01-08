@@ -1,0 +1,65 @@
+---
+title: "16-01-tsbasics"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### This is an intro on how to handle time series data.
+
+The main package we will work with is the `forecast` package. A lot of graphs can be plotted with `autoplot()`. This function takes `ts()` objects and plots nicely formatted time series plots.
+
+```{r}
+library(tidyverse)
+library(forecast)
+
+amtrak.df <- read_csv("Amtrak.csv")
+glimpse(amtrak.df)
+
+```
+
+Thus, this is a monthly series starting from 1/1/1991. We will use these two attributes (data and frequency) to create a `ts()` object.
+
+```{r}
+args(ts)
+
+amtrak.ts <- ts(amtrak.df[, 2], start = c(1991, 1), frequency = 12)
+amtrak.ts
+
+autoplot(amtrak.ts)
+```
+
+Let us now examine some seasonal patterns. For this we will use `ggseasonalplot()` and `ggsubseriesplot()`
+
+```{r}
+ggseasonplot(amtrak.ts) +
+  ggtitle("Monhtly plots by years")
+
+ggsubseriesplot(amtrak.ts) +
+  ggtitle("Seasonal panel plots")
+```
+
+Polar co-ordinates can be helpful in seeing seasonal patterns
+
+```{r}
+
+# Another good way to examine any seasonality patterns is to look at the polar co-ordinates
+ggseasonplot(amtrak.ts, polar = TRUE)
+```
+This shows a dip in ridership in winter months and increases in ridership in summer.
+
+Now let's look at another dataset. dept store sales has only quarterly data. 
+
+```{r}
+dept.df <- read_csv("DepartmentStoreSales.csv")
+
+dept.ts <- ts(dept.df[ , -1], start = c(1996, 1), frequency = 4)
+
+dept.ts
+```
+
+Now explore the data using the above chart types.
+
+__Which four components, level, trend, seasonality and noise seem to be present?__

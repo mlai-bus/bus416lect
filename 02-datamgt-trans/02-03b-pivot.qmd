@@ -1,0 +1,135 @@
+---
+title: "02-03b-pivots"
+format: html
+editor: visual
+---
+
+## Creating Excel-like Pivot tables in `dplyr`
+
+Setting up the library:
+
+```{r}
+
+
+
+library(tidyverse)
+
+```
+
+Create a toy dataset:
+
+```{r}
+
+
+ctr_data <- expand_grid(
+  yr = c(2000:2020),
+  ctr = c("ARB", "IDN", "IND"),
+  sect = c("agr", "mfg", "serv")
+) |> 
+  arrange(ctr, sect, yr)
+
+ctr_data <- ctr_data |>
+  mutate(output = rnorm(nrow(ctr_data), rpois(1,5000), 150))
+
+glimpse(ctr_data)
+```
+
+Now, generate mean output by country and sector
+
+```{r}
+ctr_data_avg <- ctr_data |> 
+  group_by(ctr, sect) |> 
+  summarise(meanY = mean(output))
+
+ctr_data_avg
+```
+
+Now, suppose we want it to display like a pivot table in Excel where rows are countries and columns are sectors. We can use the `pivot_wider()` function.
+
+```{r}
+
+pivot1 <- ctr_data_avg |> 
+  pivot_wider(
+    names_from = sect,
+    values_from = meanY
+  )
+
+pivot1
+```
+
+This will also work if we have more than one summary stat
+
+```{r}
+ctr_data_avg2 <- ctr_data |> 
+  group_by(ctr, sect) |> 
+  summarise(meanY = mean(output),
+            stdY = sd(output))
+
+ctr_data_avg2
+```
+
+```{r}
+pivot2 <- ctr_data_avg2 |> 
+  pivot_wider(
+    names_from = sect,
+    values_from = c(meanY, stdY)
+  )
+
+pivot2
+```
+
+The default arrangement is val1_name_1, val1_name2, val1_name3 etc. We can change it to val1_name1, val2_name1, val1_name2 and so on
+
+```{r}
+ctr_data_avg2 |> 
+  pivot_wider(
+    names_from = sect,
+    values_from = c(meanY, stdY),
+    names_vary = "slowest"
+  )
+```
+
+**Aside:**
+
+The new pivot tables we created are not in `tidy` format. Suppose our dataset was cross tabulated like the above two pivots and we wanted to convert it to the `tidy` format. We can use the `pivot_longer` function.
+
+```{r}
+pivot1 |> 
+  pivot_longer(
+    cols = agr:serv,
+    names_to = "sect",
+    values_to = "meanY"
+  )
+```
+
+The process is a bit more complicated in the In the case of `pivot2.` We have two values, mean and std and three sectors. One sequential approach is to first use `pivot_longer`. We create two columns, one for storing the variable names and the other for storing the values.
+
+```{r}
+
+pivot3 <-  pivot2 |> 
+  pivot_longer(
+    cols = !ctr,
+    names_to = "var",
+    values_to = "val"
+    
+  )
+pivot3
+```
+
+Now, we can separate the variable names:
+
+```{r}
+pivot3 <- pivot3 |> 
+  separate(var, c("measure", "sect"))
+pivot3
+```
+
+Finally, we can pivot it to wide format where the two new columns will be generated from `measure` and the values in those columns will be populated by `val`
+
+```{r}
+pivot3 |> 
+  pivot_wider(names_from = measure,
+              values_from = val)
+```
+
+This is back in tidy format and can be used for further analysis.

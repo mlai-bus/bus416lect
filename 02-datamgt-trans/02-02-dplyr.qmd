@@ -1,0 +1,529 @@
+---
+title: "02-02-datatransf"
+output: html_document
+---
+
+## Intro to `tidyverse()` and `dplyr()`
+
+`dplyr()` is a very powerful data management and transformation package which works upon *tidy data* with the following set of verbs and functions:
+
+-   Pick observations by their values (`filter()`).
+-   Reorder the rows (`arrange()`).
+-   Pick variables by their names (`select()`).
+-   Create new variables with functions of existing variables (`mutate()`).
+-   Collapse many values down to a single summary (`summarise()`).
+
+These can all be used in conjunction with `group_by()` which changes the scope of each function from operating on the entire dataset to operating on it group-by-group. These six functions provide the verbs for a language of data manipulation.
+
+All verbs work similarly:
+
+1.  **The first argument is a data frame.**
+
+2.  The subsequent arguments describe what to do with the data frame, using the variable names (without quotes).
+
+3.  The result is a new data frame.
+
+## Basic data operations with `dplyr()`
+
+We will work with the full gapminder data
+
+```{r}
+library(tidyverse)
+library(gapminder)
+
+life_expt <- as_tibble(gapminder)
+
+#for quick view of data
+head(life_expt)
+glimpse(life_expt)
+
+#get more details
+
+str(life_expt)
+skim(life_expt)
+```
+
+### Pick observations based on row values *`filter()`*
+
+```{r}
+filter(life_expt, year == 2002, continent =="Asia")
+
+filter(life_expt, year ==1997 | year ==2002 | year == 2007 , continent == "Asia")
+
+# We can use the %in% helper function
+
+filter(life_expt, year %in% c(1997, 2002, 2007), continent =="Asia")
+
+view1 <- filter(life_expt, year == 2007, continent  %in% c("Asia", "Africa"))
+
+rm(view1)
+#using |> 
+
+life_expt |> 
+  filter(year == 2002,
+         continent %in% c("Asia", "Africa"))
+  
+```
+
+### Arrange rows based on column values *`arrange()`*
+
+In the last example, we saw that the countries are sorted in aplhabetical order, without regard to the continents. This can be fixed by the `arrange()` verb.
+
+```{r}
+head(life_expt)
+
+arrange(life_expt, -gdpPercap)
+
+# so, to arrange the last output of filter chunk
+
+arrange(filter(life_expt, year == 2007, continent  %in% c("Asia", "Africa")), continent)
+
+# arranging by continent with highest to lowest life expectancy
+
+arrange(filter(life_expt, year == 2007, continent  %in% c("Asia", "Africa")), continent, desc(lifeExp))
+
+
+
+
+```
+
+The above line of code can get very unwieldy. We are basically taking the dataset, putting it through `filter()` and then piping the result into `arrange()`.
+
+`dplyr` or `tidyverse` has a *syntantic sugar* operator called *pipe* or `|>` (Cntr +Shift + M). The pipe operator basically takes the object on the left and passes it as the first argument to the function on the right *(pipes it)*. With the pipe operator, the code would be:
+
+```{r}
+life_expt |> 
+  filter(year == 2007, 
+         continent  %in% c("Asia", "Africa")) |> 
+  arrange( continent, desc(lifeExp))
+```
+
+The code is now so much easier to read. What we did was the following:
+
+$$ \mbox{original data }
+\rightarrow \mbox{ filter }
+\rightarrow \mbox{ arrange } $$
+
+In general, the pipe *sends* the result of the left side of the pipe to be the first argument of the function on the right side of the pipe. Here is a very simple example:
+
+```{r}
+16  |> 
+  sqrt()
+
+
+sqrt(16)
+```
+
+We can continue to pipe values along:
+
+```{r}
+16  |> 
+  sqrt()  |>  
+  log2()
+
+log2(sqrt(16))
+```
+
+The above statement is equivalent to `log2(sqrt(16))`.
+
+Remember that the pipe sends values to the first argument, so we can define other arguments as if the first argument is already defined:
+
+```{r}
+16  |> 
+  sqrt()  |> 
+  log(base = 2)
+
+log(4, base = 2)
+```
+
+Therefore, when using the pipe with data frames and **dplyr**, we no longer need to specify the required first argument since the **dplyr** functions we have described all take the data as the first argument.
+
+### Some other row selectors
+
+There are a few other row selection functions in `dplyr`
+
+```{r}
+# select by position
+df1 <- life_expt |> 
+  slice(11:20)
+
+# randomly choose n obs
+life_expt |> 
+  sample_n(10, replace = F) #default is without replacement
+
+# sample 10%
+
+
+life_expt |> 
+  sample_frac(.01, replace = F)
+
+
+set.seed(123)
+df1 <-life_expt |> 
+  sample_frac(.01, replace = F)
+```
+
+## Select columns with `select()` {#select}
+
+It's not uncommon to get datasets with hundreds or even thousands of variables. In this case, the first challenge is often narrowing in on the variables you're actually interested in. `select()` allows you to rapidly zoom in on a useful subset using operations based on the names of the variables.
+
+`select()` is not terribly useful with the gapminder data because we only have 6 variables, but you can still get the general idea:
+
+```{r}
+# Select  only country, year and life exp
+select(life_expt, country, year, lifeExp)
+
+# select country through life exp
+select(life_expt, country:lifeExp)
+
+```
+
+There are a number of helper functions you can use within `select()`:
+
+-   `starts_with("abc")`: matches names that begin with "abc".
+
+-   `ends_with("xyz")`: matches names that end with "xyz".
+
+-   `contains("ijk")`: matches names that contain "ijk".
+
+For example,
+
+```{r}
+iris_df <- iris
+
+names(iris_df)
+
+iris_df |> 
+  select(contains("Len")) |> 
+  names()
+
+iris_df |> 
+  select(starts_with("Sep")) |> 
+  names()
+```
+
+Another useful function is `rename()` :
+
+```{r}
+
+ life_expt |> 
+  rename(gdpPerCapita = gdpPercap,
+         population = pop) |> 
+  summarise(meanpop = mean(population),
+            medgdppc =median(gdpPerCapita))
+  
+  
+
+# note that this does not change the orgignial dataset. That variable is still gdpPercap
+head(life_expt)
+```
+
+### Add new variables with `mutate()`
+
+`mutate()` is an incredibly powerful function that helps us create newvariable and add them to the existing data, all in the same step.
+
+```{r}
+# generate nominal gdp
+
+ life_expt |> 
+  mutate( nomGdp = pop * gdpPercap  ) |> 
+  
+
+```
+
+It is often useful to rescale exponentially growing variabes like the pop to logs.
+
+```{r}
+life_expt |> 
+  mutate(ln_pop = log(pop)  ) -> life_expt2
+```
+
+Two things to note. You can include line breaks in R by ending sentences at things like , + etc so that R know that something must be following this line. Line breaks help make the code readable. Second, `mutate()` did not change the original dataset. Suppose we wanted to create the above two variables and save them in a new dataset. We would have to create a new object. Let's do this using pipes.
+
+```{r}
+life_expt2 <- life_expt  |>  
+  mutate(
+    nomGdp = pop * gdpPercap ,
+    ln_pop = log(pop)
+  ) |> 
+  select(-pop, -gdpPercap)
+
+
+head(life_expt2)
+
+
+```
+
+### Grouping data by variables
+
+We often need to find values across different categories. We can find the top n values of a variable in the dataset.
+
+```{r}
+life_expt |> 
+  top_n(5, lifeExp) |> 
+  arrange(-lifeExp)   # sort the data in descending order of lifeExp
+```
+
+But suppose, we want to find the top two values in each continent. That's where `group_by()` will be useful.
+
+```{r}
+
+life_expt |>
+  filter(year ==2007) |> 
+  group_by(continent) |> 
+  top_n(2, lifeExp) |> 
+  arrange(continent, -lifeExp) |> 
+  select(country:lifeExp)# we can sort on multiple variables
+```
+
+### `summarise()`
+
+`summarise()` collapses data into a single row based on a helper function. Let's start by finding the average life expectancy.
+
+```{r}
+
+life_expt |> 
+  summarise(avLE = mean(lifeExp))
+```
+
+Not very useful! Instead of finding average life expectancy across the entire population, we may be interested in the average life expectancy for each continent (and perhaps by countries within each continent). Again, `group_by()` lets us do exactly that. By itself, it does not do much but once combined with `summarise()`, it helps us do operations based on the different strata.
+
+```{r}
+life_expt |>
+  group_by(continent) |> 
+  summarise(avLE = mean(lifeExp))
+```
+
+By continent and country:
+
+```{r}
+
+
+life_expt |>
+  group_by(continent, country) |> 
+  summarise(avLE = mean(lifeExp)) |> 
+  arrange(continent, -avLE)  |> 
+  filter(continent %in% c("Europe", "Asia")) #You can pipe in generated variables like avLE
+
+```
+
+Thus, while the above two verbs are not pretty remarkable by themselves, but when used in conjunction, can provide very useful ways of examining and plotting data. It will be worth your time to dig deeper into these.
+
+Let's create a summary table
+
+```{r}
+summarise(life_expt, mean_lifeExp = mean(lifeExp, na.rm = TRUE))
+
+```
+
+na.rm = TRUE means that if we have a missing value, remove that entire row from computation. This is because missing values will throw an error while using certain statistical function. You can type `?summarise` to see the various functions that can be used.
+
+Suppose we want to get the average life expectancy for each continent for each time period.
+
+```{r}
+life_expt  |>  
+  group_by(continent, year)  |>  
+  summarise(meanLifeExp = mean(lifeExp, na.rm = TRUE),
+            medianLifeExp = median(lifeExp, na.rm = TRUE), 
+            sdLifeExp = sd(lifeExp, na.rm = TRUE)
+            )
+
+# If we wanted years first then continents
+
+life_expt  |>  
+  group_by(year, continent)  |>  
+  summarise(meanLifeExp = mean(lifeExp, na.rm = TRUE),
+            medianLifeExp = median(lifeExp, na.rm = TRUE), 
+            sdLifeExp = sd(lifeExp, na.rm = TRUE)
+            )
+
+
+```
+
+What if we wanted summary of more than one variable?
+
+We can combine `summarise` with `across()` as in, `summarise(across(.cols, .fns,..))`
+
+```{r}
+life_expt2 |> 
+  #group_by(continent, year)  |>  
+  summarise(across(c(ln_pop, lifeExp), mean))
+```
+
+We can also get two summary functions for two variables. The summary functions can be passed as a list (or a named list)
+
+```{r}
+life_expt2 |> 
+ # group_by(continent, year)  |>  
+  summarise(across(c(ln_pop, lifeExp), list(average = mean, stdev = sd)))
+#list(mean = mean, stdev = sd)))
+```
+
+Notice above that the name that we assign to each function gets appended to the column name. Let's say we want to get the two summary functions of every thing that contains "Gdp"
+
+```{r}
+life_expt2 |> 
+  group_by(continent, year)  |>  
+  summarise(across(contains("gdP"), c(mean = mean, stdev = sd)))
+```
+
+We can also use the three helper functions mentioned earlier, `starts_with()`, `ends_with()`, `contains()`.
+
+### Another data management application.
+
+```{r}
+# If for the first time:
+#install.packages("mosaicData")
+library(mosaicData)
+
+```
+
+We will create some subsets of a bigger data:
+
+```{r}
+
+housing_df <- as_tibble(SaratogaHouses)
+summary(housing_df)
+glimpse(housing_df)
+str(housing_df)
+
+# Selecting variables
+housing_sub <-  select(housing_df, price, lotSize, age)
+
+## A cleaner way to write it is to use the pipe operator
+housing_sub1 <- housing_df |> 
+                  select(price, lotSize, age)
+
+housing_sub2 <- housing_df |> 
+                  select(-lotSize, -age)
+
+housing_sub3 <- housing_df  |>  
+                  select(price, age:heating)
+
+```
+
+Let's make use of some of the helper functions for `select()` discussed above.
+
+Another useful function is `everything()`, which can be used to rearrange variables
+
+```{r}
+housing_sub4 <- housing_df |> 
+                  select(price, age, contains("rooms"))
+
+# Suppose we want to move age to the begining of the variable list
+# Could be useful if you want to move your dependent variable to the first column
+housing_sub4 <- housing_df  |>  
+                  select(age, everything())
+```
+
+### Selecting observations
+
+```{r}
+housing_sub1 <- housing_df  |>  
+                filter(waterfront == "Yes")
+
+housing_sub2 <- housing_df  |>  
+                filter(waterfront == "No",
+                       age > 42,
+                       price < 150000 )
+glimpse(housing_sub2)
+
+```
+
+### Add new variables using mutate()
+
+```{r}
+# Create a new variable pricePerSqF and add that to housig_df and assign it as a new object
+housing_df2 <- housing_df |>  
+                  mutate( pricePerSqF = price/livingArea)
+
+# Clasiffy size as small medium and large and add to housing_df2
+
+housing_df3 <- housing_df2  |>  
+    mutate(size = ifelse(livingArea <= 1100, "small", 
+                                ifelse((livingArea >1100 & livingArea <= 2500),
+                                       "medium",
+                                       "large")))
+```
+
+**A newer approach `case_when`**:
+
+```{r}
+housing_df3 <- housing_df2 |> 
+        mutate(
+          size = case_when(
+              livingArea <= 1100 ~ "small", 
+              (livingArea >1100 & livingArea <= 2500) ~ "medium",
+              .default = "large"
+            )
+           ) 
+```
+
+If we wanted to convert to factor:
+
+```{r}
+housing_df3 <- housing_df2 %>% 
+          mutate(
+            size = case_when(
+            livingArea <= 1100 ~ "small", 
+            (livingArea >1100 & livingArea <= 2500) ~ "medium",
+            .default = "large"
+              )
+             ) |> 
+               mutate(size = factor(size,
+                       levels = c("small", "medium", "large")))
+
+str(housing_df3$size)
+```
+
+### Grouping and Summarizing and Filtering
+
+**Remember:** the `dplyr` library creates a data frame. So, these functions are useful if we want to create a dataframe of summary data with various aggregations.
+
+```{r}
+
+
+mysum2 <- housing_df3  |>  
+            group_by(size, newConstruction)  |>  
+               summarise(median_price = median(price),
+                  avg_livingArea = mean(livingArea, na.rm = TRUE),
+                  sd_livingArea = sd(livingArea, na.rm = TRUE),
+                  avg_bedrooms = mean(bedrooms))
+mysum2
+
+```
+
+### `distinct()` and `count()`
+
+Another useful `dplyr` function is `distinct()`, which finds all unique rows in the dataset. For instance, we want to find the various types of heating systems.
+
+```{r}
+housing_df |> 
+  distinct(heating)
+```
+
+If we wanted to keep all the columns associated with the first occurence of the heating type:\
+
+```{r}
+housing_df |> 
+  distinct(heating, .keep_all = T)
+```
+
+Are all heating types available for waterfront?
+
+```{r}
+housing_df |> 
+  distinct(heating, waterfront)
+```
+
+If we want to get the count.
+
+```{r}
+housing_df |> 
+  count(heating , waterfront, sort = T)
+```
+
+```{r}
+iris %>%
+  filter(if_any(ends_with("Width"), ~ .x > 4))
+```

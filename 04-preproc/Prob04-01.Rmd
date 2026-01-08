@@ -1,0 +1,227 @@
+---
+title: "Untitled"
+author: "Dr. Jeff Jacob"
+date: "2/2/2022"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(caret)
+library(tidyverse)
+library(purrr)
+library(skimr)
+library(hablar)
+```
+
+Import the data
+
+```{r}
+cereals.df <- read_csv("Cereals.csv")
+glimpse(cereals.df)
+```
+
+
+```{r}
+cereals.df <- cereals.df |> 
+  convert(fct(mfr, type, shelf))
+
+
+skim(cereals.df)
+
+#there are some missing values which we should drop
+# ways
+cereals.df |> 
+  drop_na() |> 
+  skim()
+
+# We can even choose which columns to drop
+
+cereals.df |> 
+  drop_na(potass) |> 
+  skim()
+# the above code only dropped missing rows from potass
+
+# use na.omit
+
+na.omit(cereals.df) |> 
+  skim()
+
+# complete.cases
+
+cereals.df[complete.cases(cereals.df), ] |> 
+  skim()
+
+# i like the dplyr functions
+
+cereals.df <- data.frame(cereals.df) |> 
+  drop_na()
+
+skim(cereals.df)
+```
+
+
+Now get the specific summary stats. We will use `skimr`. First see the skimmers and then choose mean, md, max and min
+
+```{r}
+skim(cereals.df) 
+#or better
+
+my_skim <- skim_with(numeric = sfl(mean = mean, sd = sd, p50 = median,
+                         p0 = min, p100 = max),
+                     base = NULL, append = F)
+my_skim(cereals.df[ , -c(1:3)])
+```
+
+In the above code. base = NULL removes base skim functions. The `skim_function_list` or `sfl()` specifies what other functions we need to use for our summary stats.
+
+The more traditional approach is:
+
+```{r}
+sapply(cereals.df[ , -c(1:3)], mean, na.rm = T)
+sapply(cereals.df[ , -c(1:3)], sd, na.rm = T)
+sapply(cereals.df[ , -c(1:3)], median, na.rm = T)
+
+#or if we want to be fancy and want it all in one dataframe :)
+
+summ.data <- round(cbind(
+  data.frame(mean = t(t(sapply(cereals.df[ , -c(1:3)], mean, na.rm = T)))),
+  data.frame(stddev = t(t(sapply(cereals.df[ , -c(1:3)], sd, na.rm = T)))),
+  data.frame(median = t(t(sapply(cereals.df[ , -c(1:3)], median, na.rm = T)))),
+  data.frame(max = t(t(sapply(cereals.df[ , -c(1:3)], max, na.rm = T)))),
+  data.frame(min = t(t(sapply(cereals.df[ , -c(1:3)], min, na.rm = T))))),2)
+
+```
+
+The next question wants us to create multiple historgrams. We have seen this before. However, we will create a plot window where we will arrange our 12 histograms by rows in a 4 X 3 fashion.
+
+This is done by the `par()` argument. The default is `par(mfrow = c(1,1))`, that is, each plot gets its own window. We will change it to 4x3 and then switch back to 1x1.
+
+```{r}
+par(mfrow = c(4,3))
+for (i in 4:ncol(cereals.df)){
+  print(ggplot(data = cereals.df, 
+               aes( x = cereals.df[, i], y = ..density..)) +
+          geom_histogram() +
+          labs(title = names(cereals.df)[i])) }
+par(mfrow = c(1,1))
+```
+
+
+Now the box and whisker plots.
+
+```{r}
+cereals.df |> 
+  ggplot(aes(x = type, y = calories)) +
+  geom_boxplot()
+
+
+cereals.df |> 
+  ggplot(aes(x = factor(shelf), y = rating)) +
+  geom_boxplot()
+
+```
+
+Hot cereals generally have lower calories than cold cereals. Some of the cold cereals have extremely high calorie content.  
+Shelves 1 and 3 seem to display cereals with higher rating.
+
+
+
+### Correlation analysis
+
+```{r}
+library(ggcorrplot)
+cormat <- cor(cereals.df[, -c(1:3)])
+
+ggcorrplot(cormat, method = "square", type = "lower",
+           hc.order = T ,  lab = T)
+```
+
+There are some variables with very high correlation. We can use the `findCorrelation()` function from caret to remove variable with high correlation.
+
+Once we identify those variables, we can remove them from our dataset. There is one problem though. We ran correlation on a subset of cereals.df. `findCorrelation()` will give the column number of variables from the corr matrix that need to be removed.
+
+```{r}
+high.corr <- print(findCorrelation(cormat, cutoff = 0.75))
+high.corr
+
+# So variables 13 and 5 need to be removed. But which are these?
+cormat
+
+# fiber and rating need to be removed. Like before, one could do:
+
+cereal.filter <- cereals.df[, -high.corr]
+
+#However, this removes 5 and 13 columns from the main dataset.
+glimpse(cereal.filter) #fiber and rating are still there.
+
+#A better approach
+high.corr <- print(findCorrelation(cormat, cutoff = 0.75,
+                                   #this argument give us names
+                                   names = T))
+high.corr
+
+# notice the %in% function. This for matching anything appearing in a list
+
+cereal.filter <- cereals.df[ , -which(names(cereals.df) %in% high.corr)]
+glimpse(cereal.filter) 
+```
+
+Would things change if we normalize the data? We will again use `caret`
+
+```{r}
+cer.norm <- preProcess(cereals.df,
+                          method = c("center", "scale"))
+cereals.dfn <- predict(cer.norm, newdata = cereals.df)
+```
+
+Now let's do correlation analysis on this new normalized dataset
+
+```{r}
+corr.mat.n <- cor(cereals.dfn[, -c(1:3)])
+
+ggcorrplot(corr.mat.n, hc.order = T,
+           method = "square", type = "lower", lab = T)
+
+
+```
+
+
+Thus, standardizing the data does not impact the correlation between variables. It only rescales the individual variables. This is an important point. This is the reason why we can carry out analysis on standardized data just like we do on raw data. We can check this by running a basic regression model.
+
+```{r}
+reg1 <- lm(calories ~ carbo + sugars + fat + protein, data = cereals.df)
+summary(reg1)
+
+reg2 <- lm(calories ~ carbo + sugars + fat + protein, data = cereals.dfn)
+summary(reg2)
+```
+
+Notice that AdjRsq, residual standard error and even the individual coefficients p-value do not change.
+
+Where standardization makes an impact in on the variance (and thus, information) captured by individual variables. This becomes evident in pca
+
+```{r}
+
+pca.raw <- prcomp(cereals.df[, -c(1:3)])
+summary(pca.raw)
+
+```
+
+The first two pca capture 90% of the variation.
+
+```{r}
+
+pca.std <- prcomp(cereals.dfn[, -c(1:3)])
+summary(pca.std)
+
+```
+
+Now we need 7 components.
