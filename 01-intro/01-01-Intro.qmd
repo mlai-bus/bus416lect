@@ -185,7 +185,7 @@ rank(x) #rank tells us where exactly the elements belong in their relative posit
 
 Let's see only the countries from Africa who have much lower life expectancy (less than 45 years)
 
-```{r }
+```{r}
 africa <- life.expt$continent =="Africa"
 poor.health <- life.expt$lifeExp < 45
 
