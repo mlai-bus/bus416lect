@@ -2,6 +2,16 @@
 # R ENVIRONMENT SETUP FOR COURSE (INSTRUCTOR)
 ############################################
 
+### If needed:
+# Deactivate renv if active
+## if ("renv" %in% loadedNamespaces()) detach("package:renv", unload = TRUE)
+
+# Delete renv infrastructure
+## unlink("renv", recursive = TRUE)
+## unlink("renv.lock")
+###############
+
+
 # ---- 1. Install and initialize renv ----
 install.packages("renv")
 library(renv)
