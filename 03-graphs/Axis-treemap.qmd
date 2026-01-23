@@ -1,0 +1,88 @@
+---
+title: "Axis and Treemap"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(mlbadata)
+utility.toy <- mlbadata::Utilities %>% slice(1:15)
+utility.toy %>% 
+  ggplot(aes(x = Company, y = RoR)) +
+  geom_segment(aes(x=Company, xend=Company, y=0, yend=RoR))+
+  geom_point(color = " red", size = 3)
+
+
+```
+
+```{r}
+# There are two ways of fixing this. First one retains the axis direction
+
+utility.toy %>% 
+  arrange(RoR) %>% 
+  ggplot(aes(x = reorder(Company, RoR), y = RoR)) +
+  geom_segment(aes(x=Company, xend=Company, y=0, yend=RoR))+
+  geom_point(aes(color = " red"), size = 3) +
+  theme(axis.text.x = element_text(angle = 60, vjust = 0.5))
+
+```
+
+```{r}
+#Easier way
+utility.toy %>% 
+  ggplot(aes(x = Company, y = RoR)) +
+  geom_segment(aes(x=Company, xend=Company, y=0, yend=RoR))+
+  geom_point(color = " red", size = 3) +
+  coord_flip()
+```
+
+Also, please copy this code chunk on 03-02 file that we used in the class today instead of the **parts of the whole** section
+
+### Parts of the whole data
+
+Treemaps help us visualize parts of the whole data. They are especially useful if the follows a hierarchical ordering. For example, in the ebay dataset, ordering is item category, sub-category, and brand.
+
+```{r}
+library(tidyverse)
+library(treemapify)
+library(treemap)
+
+library(mlbadata)
+
+ebay.df <- as_tibble(mlbadata::eBayTreemap)
+
+# add column for negative feedback
+ebay.df$negative.feedback <- 1* (ebay.df$Seller.Feedback < 0)
+
+# Take the averages of neg feedback and high bid
+ebay.tm <- ebay.df %>% 
+  group_by(Category, Sub.Category, Brand) %>% 
+  summarise(Avg_HighBid = mean(High.Bid, na.rm = TRUE),
+            Avg_NegFeedback = mean(negative.feedback, na.rm = TRUE)) %>% ungroup
+# draw treemap
+
+
+ebay.tm |> 
+treemap( index = c("Category","Sub.Category", "Brand"), 
+    vSize = "Avg_HighBid", vColor = "Avg_NegFeedback",
+    align.labels = list(c("left", "top"), c("right", "bottom"), c("center", "center")),
+    palette ="Pastel1", type = "manual",title = "")
+```
+
+```{r}
+
+
+ebay.tm %>% 
+  ggplot(aes(area = Avg_HighBid, fill = Avg_NegFeedback,
+             label = Category,
+             subgroup = Sub.Category,
+             subgroup2 = Brand)) +
+  geom_treemap() +
+  geom_treemap_text(color = "white", size = 15, grow = TRUE) +
+  geom_treemap_subgroup_text(color = "white", size = 10, place = "center") +
+  geom_treemap_subgroup2_text(color = "red", size = 6) +
+  geom_treemap_subgroup_border(color = "white", size = 5) +
+  geom_treemap_subgroup2_border(color = "blue", size = 2) +
+  scale_fill_viridis_c()
+```

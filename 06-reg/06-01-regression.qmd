@@ -1,0 +1,93 @@
+---
+title: "Regression Methods"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Linear Regression
+
+Load the libraries
+
+```{r}
+library(tidyverse)
+library(broom)
+library(forecast)
+library(caret)
+library(mlbadata)
+```
+
+We will use the first 1000 observations and some selected variables to predict the price of used Corollas
+
+```{r}
+car.df <- mlbadata::ToyotaCorolla
+# use first 1000 rows of data
+car.df <- car.df[1:1000, ]
+# select variables for regression
+
+head(car.df)
+
+#convert fuel type to factor
+car.df$Fuel_Type <- as.factor(car.df$Fuel_Type)
+head(car.df)
+
+selected.var <- c(3, 4, 7, 8, 9, 10, 12, 13, 14, 17, 18)
+
+car.df.sel <- car.df[, selected.var]
+
+
+```
+
+Partition the data in training and valid (60-40)
+
+```{r}
+set.seed(1)
+
+trainInd <- createDataPartition(car.df.sel$Price, p = 0.6, list = F)
+train.df <- car.df.sel[trainInd, ]
+valid.df <- car.df.sel[-trainInd, ]
+```
+
+We start by running a basic regression model with out any feature selection.
+
+```{r}
+lm.1 <- lm(Price ~ ., data = train.df)
+
+#model results
+tidy(lm.1)
+
+#snapshot of summary stats
+glance(lm.1)
+glance(lm.1)$adj.r.squared
+```
+
+Let us use this model to predict car prices in our validation set. We will try a different commmand, `augment()`.
+
+```{r}
+
+head(augment(lm.1, newdata = valid.df))
+# as we see, augmented() adds the prediction to the dataset with values prepended by ".".
+
+augment(lm.1, newdata = valid.df) |> 
+  rename(Pricehat = .fitted,
+         resid = .resid) -> valid.pred
+
+# check rmse etc
+
+postResample(valid.pred$Pricehat, valid.df$Price)
+
+# Plot resid vs predicted value and a histogram of residuals
+
+valid.pred |> 
+  ggplot(aes(x = Pricehat, y = resid)) +
+  geom_point()
+
+valid.pred |> 
+   ggplot(aes(x = resid, y = ..density..)) +
+  geom_histogram()
+
+```

@@ -1,0 +1,180 @@
+---
+title: "03-reg-penalised"
+format: html
+editor: visual
+---
+
+## 
+
+Load the libraries
+
+```{r}
+library(tidyverse) 
+library(broom) 
+library(forecast) 
+library(caret) 
+library(mlbadata)
+library(fastDummies)
+```
+
+Like before, we will use the first 1000 observations and some selected variables to predict the price of used Corollas
+
+Prepare the data.
+
+```{r}
+
+car.df <- mlbadata::ToyotaCorolla
+# use first 1000 rows of data
+car.df <- car.df[1:1000, ]
+# select variables for regression
+
+
+#convert fuel type to factor
+car.df$Fuel_Type <- as.factor(car.df$Fuel_Type)
+
+selected.var <- c(3, 4, 7, 8, 9, 10, 12, 13, 14, 17, 18)
+
+car.df.sel <- car.df[, selected.var]
+car.df.dum <- dummy_columns(car.df.sel, remove_first_dummy = T,
+                            remove_selected_columns = T)
+
+
+
+set.seed(1)
+trainInd <- createDataPartition(car.df.dum$Price, p = 0.6, list = F)
+train.df <- car.df.dum[trainInd, ]
+valid.df <- car.df.dum[-trainInd, ]
+```
+
+## Regularized or Penalized Regression
+
+In the previous examples, selecting a subset of predictors was equivalent to setting some of the model coefficients to zero. This approach creates an interpretable result—we know which predictors were dropped and which are retained. A more flexible alternative called regularization or shrinkage, “shrinks” the coefficients toward zero. Recall that adjusted R^2^ incorporates a penalty according to the number of predictors p. Shrinkage methods also impose a penalty on the model fit, except that the penalty is not based on the number of predictors but rather on some aggregation of the coefficient values (typically predictors are first standardized to have the same scale). The general form of this penalty is: $$ \lambda\sum_{j=1}^K|\beta_j|^p $$ . When p =1, we call it L1 regularization of LASSO and the model with p = 2 is called the Ridge Regression (L2 regularization). Formally,
+
+Let SSE or the sum of squared errors be given by:
+
+$$  SSE =  \sum_{i=1}^N(y_i - \beta_0 -\sum_{j=1}^K\beta_j x_{ij})  $$
+
+LASSO (Least Absolute Shrinkage and Selection Operator) and Ridge Regression are given by choosing $$ \beta_0, \beta_1, ... \beta_k $$ to minimise the SSE subject to their respective penalties.
+
+Thus L1 Penalty (Lasso): $$ SSE +  \lambda\sum_{j=1}^K|\beta_j| $$
+
+The regularization parameter \$ \lambda \$ , controls the extent of the penalty. A higher \$ \lambda \$ will impose a greater penalty and shrink the coefficients to 0. This is similar to applying a selection algorithm to the variables. A smaller \$\lambda \$ will keep the results closer to OLS. The value of $\lambda$ is selected by assessing the performance on the validation set RMSE usually employing a k-fold cross validation procedure.
+
+For L2 Penalty (Ridge), the objective function is: $$ SSE +  \lambda\sum_{j=1}^K\beta_{j}^2$$
+
+These two penalties can also be combined into a single model called *Elastic Net* as follows:
+
+Elastic Net: Minimize $$ SSE +  \lambda (\alpha \sum_{j=1}^K|\beta_j|+ (1-\alpha)/2\sum_{j=1}^K\beta_{j}^2 )$$
+
+Here, \$\alpha \$ is called the mixing parameter and controls the extent of L1 $(\alpha = 1)$ and L2 $(\alpha = 0)$ regularization and \$ \lambda \$ controls the weight on the penalty. Both these can be tuned using the `glmnet` method in train. We will first use LASSO, where alpha = 1 and search for $\lambda$. It is customary to search for $\lambda$ over a log scale.
+
+```{r}
+
+
+Cntrl <- trainControl(method = "CV", number = 5,
+                      allowParallel = T)
+
+lassoGrid <- expand.grid(alpha = 1,
+                        lambda = 10^seq(-3,5,length.out = 100))
+```
+
+We will let the model determine the optimal lambda. By default 100 values are searched over.
+
+```{r}
+set.seed(14)
+lasso <- train(Price ~ ., data = train.df,
+              trControl = Cntrl,
+              tuneGrid = lassoGrid,
+              method = "glmnet",
+              preProc = c("center", "scale"))
+lasso
+```
+
+So, for the Lasso Regression, lambda was 123.28. Let's evaluate this model.
+
+```{r}
+lasso$bestTune
+coef(lasso$finalModel, s = lasso$bestTune$lambda)
+```
+
+Now, the accuracy metrics:
+
+```{r}
+accuracy(predict(lasso, train.df), train.df$Price)
+accuracy(predict(lasso, newdata = valid.df), valid.df$Price)
+```
+
+Let's now run a ridge regression. Here, $\alpha$ will be set at 0.
+
+```{r}
+ridgeGrid <- expand.grid(alpha = 0,
+                         lambda = 10^seq(-3, 5, length.out = 100))
+set.seed(14)
+ridge <- train(Price ~ ., data = train.df,
+               method = "glmnet",
+               trControl = Cntrl,
+               tuneGrid = ridgeGrid,
+               preProc = c("center", "scale"))
+
+ridge$bestTune
+coef(ridge$finalModel, s = ridge$bestTune$lambda)
+```
+
+Model evaluation metrics:
+
+```{r}
+accuracy(predict(ridge, newdata = valid.df), valid.df$Price)
+```
+
+In our example, LASSO did slightly better than Ridge.
+
+### Your turn: Elastic Net
+
+In elastic net, we will tune over both $\alpha$ and $\lambda$ using the following grid.
+
+```{r}
+Cntrl <- trainControl(method = "CV", number = 5,
+                      allowParallel = T)
+
+enetGrid <- expand.grid(alpha = seq(0,1,0.1),
+                         lambda = 10^seq(-3,5, length.out = 100))
+```
+
+Now run the elastic net model using the above grid and obtain the model evaluation metrics. What differences you see between enet and the other two regularization models?
+
+```{r}
+set.seed(14)
+enet <- train(Price ~ ., data = train.df,
+               method = "glmnet",
+               trControl = Cntrl,
+               tuneGrid = enetGrid,
+               preProc = c("center", "scale"))
+
+enet$bestTune
+
+```
+
+```{r}
+
+```
+
+lambda = 123.2847, alpha = 1
+
+|          |
+|---------:|
+| 123.2847 |
+
+```{r}
+Cntrl <- trainControl(method = "none", 
+                      allowParallel = T)
+
+enetGrid <- expand.grid(alpha = 1,
+                        lambda = 123.2384)
+enet <- train(Price ~ ., data = car.df.dum,
+               method = "glmnet",
+               trControl = Cntrl,
+               tuneGrid = enetGrid,
+               preProc = c("center", "scale"))
+
+predict(enet, newdata = mynewdata)
+```

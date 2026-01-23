@@ -1,0 +1,300 @@
+---
+title: "02-caret-model-eval"
+format: html
+editor: visual
+---
+
+## Model Evaluation
+
+In this tutorial, we will see how to obtain various model evaluation metrics after carrying out a classification exercise. The key thing to note is that some of these metrics are based on the predicted class of the data while others depend on the predicted class probability. `caret` allows one to obtain both. The default option with `predict()` in `caret` is to get the predicted class of the outcome variable. However we can add a couple of lines of code in the `trainControl()` function to get the probabilities of each class (using the `prob` option).
+
+Let's first run a basic classification model.
+
+```{r}
+#| output: false 
+#| warning: false  
+library(caret) 
+library(tidyverse) 
+library(lattice)  
+library(mlbadata) #  or, library(mlba)
+library(yardstick)
+library(pROC)
+```
+
+Import and set up the data:
+
+```{r}
+
+bank.df <- mlbadata::UniversalBank
+
+# Convert the outcome variable to a factor variable with 1 as success class
+bank.df$Personal.Loan <- factor(bank.df$Personal.Loan, 
+                                labels = c("No", "Yes")) |> 
+                        relevel(ref = "Yes")
+
+
+# Drop ZIP.Code and recode education
+bank.df <- bank.df |> select(! c(ZIP.Code, ID)) |> 
+  mutate(Education = factor(Education, levels = c(1, 2, 3),
+                            labels = c("UGrad", "Grad", "Adv/Prof")))
+
+```
+
+Partition the data in training and test
+
+```{r}
+set.seed(1234)
+trIndex <- createDataPartition(bank.df$Personal.Loan,
+                               p = 0.8,
+                               list = FALSE)
+
+
+train.df <- bank.df[trIndex,]
+test.df <- bank.df[-trIndex, ]
+
+```
+
+We will run three classification algorithms- elastic net logistic regression, bagged tree and random forest. For these models, we will tune over their respective hyperparameter spaces as well and then pick the best parameter value through five fold cross-validation, repeated 3 times. We will then compare the performance of the final model picked by the `train` function on the test set.
+
+We begin by specifying the same `trainControl()` function for the three algorithms and also will request predicted probabilities.
+
+```{r}
+set.seed(89)
+fitCntrl <- trainControl(method = "repeatedcv",
+                         number = 5, # 5-fold CV
+                         repeats = 3, #  three repeats
+                         classProbs = T,
+                         summaryFunction = twoClassSummary,
+                         allowParallel = TRUE)
+```
+
+Now let us set up the tuning values for each of the models. The parameter to tune are as follows:
+
+1.  Elastic net logistic: `aplha` : controls the mixing percentage between L1 regularization (ridge) and L2 (lasso) and `lambda` which determines the extent of regularization
+2.  Random Forrest: `mtry`: Number of predictors to be randomly chosen as each split.
+3.  Boosted Trees (using the `gbm` method/package. Here the `gbm` function in the original package has several tuning parameters. However, in `caret`, the following 4 are present
+
+-   `n.trees` (# Boosting Iterations)- default = 100
+
+-   `interaction.depth` (Max Tree Depth) default = 1
+
+-   `shrinkage` (Shrinkage) default = 0.1
+
+-   `n.minobsinnode` (Min. Terminal Node Size) default = 10
+
+Note that by default the train function will fix the last two parameters at the said values and search for the optimal `n.trees` and `interaction.depth` across three values each
+
+If no tuning grid is specified, `caret` searches over three values of the tuning parameters. We will use both approaches here.
+
+```{r}
+grid_glm <- expand.grid(alpha = seq(0,1, length = 5),
+                        lambda = seq(0.01, 0.1, length = 3))
+
+grid_rf <- expand.grid(mtry = seq(1,4))
+```
+
+Let's run the above models.
+
+```{r}
+mod_enet <- train(Personal.Loan ~ .,
+                   data = train.df,
+                   trControl = fitCntrl,
+                   method = "glmnet",
+                   tuneGrid = grid_glm,
+                   metric = "ROC")
+
+#rf
+mod_rf <- train(Personal.Loan ~ .,
+                   data = train.df,
+                   trControl = fitCntrl,
+                   method = "rf",
+                   tuneGrid = grid_rf,
+                   metric = "ROC")
+
+#Gradient Boosting
+mod_gbm <- train(Personal.Loan ~ .,
+                   data = train.df,
+                   trControl = fitCntrl,
+                   method = "gbm",
+                   tuneLength = 5,
+                   metric = "ROC",
+                  verbose = FALSE)
+```
+
+Now we have three models. For each model, the tuning parameters were chosen from the values specified in the respective tune grids. The selection was based on the average AUC performance on the held out sample from our five-fold repeated cross validation. We can see the summary of these models and the final tuned parameter values.
+
+```{r}
+mod_enet
+```
+
+```{r}
+mod_rf
+```
+
+```{r}
+mod_gbm
+```
+
+`Caret` has a nice function that will help us see between model pefromance metrics on the resampling process higlighted in the `trainControl()` function.
+
+```{r}
+perfm_compare <- resamples(list(ENet = mod_enet,
+                                RandForest = mod_rf,
+                                SGBM = mod_gbm))
+
+perfm_compare
+
+summary(perfm_compare)
+```
+
+We see that `random forest` seems to be the best.
+
+## Evaluating the performance on the test (holdout) data
+
+Let us now predict the outcome on the test set using each of these three models. We will look at two different type of evaluation metrics- those based on the predicted class and those based on the predicted probabilities. The default in `caret` is to predict the class but the probabilities can easily requested.
+
+```{r}
+enet_hat <- predict(mod_enet, newdata = test.df, type = "prob")
+head(enet_hat)
+
+#Let's also obtain the predicted class by finding the colname of the colunm with max probability and convert it to a factor
+
+enet_hat$predClass <-  colnames(enet_hat)[max.col(enet_hat)]  %>% 
+                          factor(levels = c("Yes", "No"))
+
+#This next step will be useful for plotting multiple ROCs
+enet_hat <- cbind(model = "enet", enet_hat)
+head(enet_hat)
+
+# For RF
+rf_hat <- predict(mod_rf, newdata = test.df, type = "prob")
+ 
+
+#Let's also obtain the predicted class by finding the colname of the colunm with max probability and convert it to a factor.
+
+rf_hat$predClass <-  colnames(rf_hat)[max.col(rf_hat)] %>% 
+                          factor(levels = c("Yes", "No"))
+
+rf_hat <- cbind(model = "rf", rf_hat)
+head(rf_hat)
+
+#Now gbm
+gbm_hat <- predict(mod_gbm, newdata = test.df, type = "prob")
+ 
+
+#Let's also obtain the predicted class by finding the colname of the colunm with max probability and convert it to a factor.
+
+gbm_hat$predClass <-  colnames(gbm_hat)[max.col(gbm_hat)] %>% 
+                          factor(levels = c("Yes", "No"))
+
+gbm_hat <- cbind(model = "gbm", gbm_hat)
+head(gbm_hat)
+
+```
+
+The first set of evaluation metrics can be obtained through the confusion matrix. The first argument in it is the predicted class and the second argument is the true class. Let's obtain one for the gbm model.
+
+```{r}
+confusionMatrix(data = rf_hat$predClass,
+                reference = test.df$Personal.Loan)
+```
+
+This has the usual interpretation. Sensitivity is 0.89 and accuracy is 0.987. The null of equality of accuracy and no information rate can be rejected.
+
+We can obtain the confusion matrix for the other two models as well.
+
+The second class of evaluation metrics depend on the predicted class probabilities. Lift Curve tells us the ratio of correctly predicted class outcome to random success rate of the model. This is obtained through the `lift_curve()` function in `Yardstick` package. This function has three arguments: dataset, actual class, predicted probability. Let's first combine the true class with each \**hat data.*
+
+```{r}
+enet_hat$actualClass <- test.df$Personal.Loan
+rf_hat$actualClass <- test.df$Personal.Loan
+gbm_hat$actualClass <- test.df$Personal.Loan
+```
+
+Let's start by plotting a single lift curve. The first argument is a dataframe, which is piped in, then the truth class as a factor and then the predicted probability.
+
+```{r}
+
+
+rf_lift <- rf_hat %>% 
+    lift_curve( actualClass, Yes)
+autoplot(rf_lift)
+```
+
+We can stack all the three models and use *`group`*`by()` function to create separate lift charts in the same figure for these models.
+
+```{r}
+
+
+mod_hat <- rbind(enet_hat, rf_hat, gbm_hat)
+head(mod_hat)
+```
+
+```{r}
+lift_data <- mod_hat %>% 
+                group_by(model) %>% 
+                lift_curve(actualClass, Yes) 
+                
+autoplot(lift_data)
+```
+
+We can use a similar method for the ROC curves. The function is `roc_curve()` with the same three arguments as the lift curve.
+
+```{r}
+
+data_ROC <- mod_hat %>% 
+                group_by(model) %>% 
+                roc_curve(actualClass, Yes)
+autoplot(data_ROC)
+```
+
+```{r}
+
+roc_table <- mod_hat %>% 
+                group_by(model) %>% 
+                roc_auc(actualClass, Yes)
+  
+roc_table
+```
+
+## Deploying the best model to score new data
+
+Our best model is the `random forest`.
+
+```{r}
+mod_rf$bestTune
+
+fitCntrl <- trainControl(method = "none", classProbs = TRUE,
+                         allowParallel = TRUE)
+best_rf <- train(Personal.Loan ~ .,
+                   data = bank.df,
+                   trControl = fitCntrl,
+                   method = "rf",
+                   tuneGrid = mod_rf$bestTune,
+                   metric = "ROC",
+                  verbose = FALSE)
+
+
+
+```
+
+We will use this final model to then score new data.
+
+Suppose we wanted to use GBM instead:
+
+```{r}
+mod_gbm$bestTune
+
+fitCntrl <- trainControl(method = "none", classProbs = TRUE,
+                         allowParallel = TRUE)
+best_gbm <- train(Personal.Loan ~ .,
+                   data = bank.df,
+                   trControl = fitCntrl,
+                   method = "gbm",
+                   tuneGrid = mod_gbm$bestTune,
+                   metric = "ROC",
+                  verbose = FALSE)
+
+
+
+```

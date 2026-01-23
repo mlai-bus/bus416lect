@@ -1,0 +1,183 @@
+---
+title: "05-02-classification"
+format: pdf
+editor: visual
+---
+
+## 5.2: Data partition and Performance Evaluation for categorical outcomes
+
+### Data partitioning
+
+```{r}
+#| echo = false
+library(yardstick)
+library(tidyverse)
+library(caret)
+library(e1071)
+library(mlbadata)
+```
+
+Load the data and create a 60-40 partition. We will set the random seed to a number to replicate the partition and use `caret` to create the partition.
+
+The main advantage of this function over `sample()` is that if the dependent variable is a categorical variable, the distribution of categories is preserved across the training and validation sets. Let us see this by partitioning the following dataset with a heavy class imbalance.
+
+```{r}
+
+bank.df <- mlbadata::UniversalBank
+bank.df$Securities.Account <- factor(bank.df$Securities.Account,
+                                          levels = c("1", "0"),
+                                          labels = c("Yes", "No"))
+
+bank.df %>% 
+  group_by(Securities.Account) %>% 
+  summarise(n = n()) %>% 
+  mutate(percent = n/sum(n))
+```
+
+Suppose our outcome variable is whether customers have a securities account. Here, only 10% of the customers fall in this category. If we randomly partition data, our validation set could possibly be without anyone with a securities account. `createDataPartition()` avoids this problem. The steps are:
+
+1.  Make sure that the outcome variable is set as a factor variable.
+2.  Specify the outcome variable using the `y =` argument.
+
+```{r}
+trainIndex <- createDataPartition(y = bank.df$Securities.Account,
+                                  p = 0.6,
+                                  list = F)
+train.bank.df <- bank.df[trainIndex, ]
+
+
+train.bank.df %>% 
+  group_by(Securities.Account) %>% 
+  summarise(n = n()) %>% 
+  mutate(percent = n/sum(n))
+```
+
+Let's look at the validation set.
+
+```{r}
+valid.bank.df <- bank.df[-trainIndex, ]
+
+valid.bank.df %>% 
+  group_by(Securities.Account) %>% 
+  summarise(n = n()) %>% 
+  mutate(percent = n/sum(n))
+```
+
+This approach is very useful in classification problems.
+
+### Evaluating the Performance of Classification Models
+
+### Confusion Matrix
+
+Consider the following example where our outcome variable is binary and suppose we have built a classification model to obtain the probabilty of an observation belonging to the target class.
+
+```{r}
+owner.df <- mlbadata::OwnerExample
+owner.df$Class <- factor(owner.df$Class, 
+                   labels = c("nonowner", "owner" ))
+```
+
+The `caret` package has a nice function to generate the confusion matrix. The first argument is the predicted class and the second argument is the reference (truth) class.
+
+```{r}
+
+confusionMatrix(as.factor(ifelse(owner.df$Probability>0.5, 'owner', 'nonowner')), 
+                owner.df$Class)
+```
+
+**Really Important:** In `caret`, the first class is the target class!! Here, `nonowner` is the first level so it is the target class.
+
+We can change that by specifying the `positive =` parameter.
+
+```{r}
+confusionMatrix(as.factor(ifelse(owner.df$Probability>0.5, 'owner', 'nonowner')), 
+                owner.df$Class,
+                positive = "owner")
+```
+
+#### Note: Base `R` packages may expect the first level to be failure, i.e. 0, 1. In `caret`, first level is the target (1,2 format).
+
+It may be useful to relevel the class variable so that the reference or first level is the target class.
+
+```{r}
+owner.df <- mlbadata::OwnerExample
+# check the levels
+levels(owner.df$Class)
+
+# if owner is not the reference class,
+
+owner.df$Class <- relevel(owner.df$Class, ref = "owner")
+levels(owner.df$Class)
+
+
+confusionMatrix(as.factor(ifelse(owner.df$Probability>0.5, 'owner', 'nonowner')), 
+                owner.df$Class)
+
+```
+
+Recall that `sensitivity` is the model's ability to detect the target class among all the target classes (1 - class 1 error rate) and `specificity` is the ability to detect the failure class from all possible failures (1 - class 0 error rate).
+
+We can generate the confusion matrix for any cutoff level:
+
+```{r}
+confusionMatrix(as.factor(ifelse(owner.df$Probability>0.25, 'owner', 'nonowner')), 
+                owner.df$Class)
+
+confusionMatrix(as.factor(ifelse(owner.df$Probability>0.75, 'owner', 'nonowner')), 
+                owner.df$Class)
+```
+
+Observe that as the cutoff is lowered, `sensitivity` increases while `specificity` drops and *vice versa*.
+
+### Receiver Operating Curve (ROC) and Area Under the Curve
+
+We can also easily obtain the ROC curves and area under the curve (AUC) using the `proc` library.
+
+```{r}
+library(pROC)
+r <- roc(owner.df$Class, owner.df$Probability)
+plot.roc(r)
+
+# compute auc
+auc(r)
+```
+
+`Yardstick` library also has a function to plot the roc
+
+```{r}
+
+
+roc_1 <- owner.df %>% 
+  yardstick::roc_curve(Class, Probability) 
+autoplot(roc_1)
+
+yardstick::roc_auc(owner.df, Class, Probability)
+
+# The syntax is roc_auc(data, TruthClass(Factor), PredictedProbClass1)
+```
+
+### Cumulative and decile lift charts
+
+While AUC tells us the ability of the model to classify correctly, a lot of business applications involve finding a sub-sample of the data most likely to fall in the target class.The cumulative and decile lift charts address this.
+
+We will use `lift` function in `caret` to obtain the cumulative lift chart. Here, it is important to have class 1 as the first level.
+
+```{r}
+lift_data <- caret::lift(Class ~ Probability, data = owner.df)
+
+ggplot(lift_data, values = 70)
+```
+
+The `(, values = 70)` argument generates the line indicating the percentage of data needed by the above model to capture 70% of the target class. In this case, it is roughly 38%.
+
+Comments: If we had a data of predicted probabilities coming from different models, we could generate lift charts for each model separately using `lift(Actual Class ~ mod1 + mod2 +..+ modn)`
+
+Finally, we can generate decile-wise lift charts using `yardstick` package.
+
+```{r}
+
+lift1 <- yardstick::lift_curve(owner.df, Class, Probability)
+autoplot(lift1) +
+  scale_x_continuous(breaks = seq(0, 100, 10))
+
+```

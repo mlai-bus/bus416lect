@@ -1,0 +1,262 @@
+---
+title: "01-caret-basics"
+format: html
+editor: visual
+---
+
+## Caret Basics
+
+This tutorial contains some basic notes about the use of `caret` API for machine learning.
+
+`caret` is a wrapper for more than 200 different machine learning packages in `R` and provides a unified syntax and framework to implement data pre-processing, model estimation, parameter tuning and model evaluation tasks.
+
+To obtain datafiles, you can either install the `mlba` library by Peter Gedeck (co-author of Machine Learning for Business Analytics) from the book's github or my fork of it, which only contains the raw data.
+
+```{r}
+#| eval: false
+#| output: false
+#| warning: false
+#| include: false
+
+library(devtools)
+install_github("gedeck/mlba/mlba", force=TRUE)
+# or for the forked version
+
+install_github("econjjacob/mlbadata", force=TRUE)
+```
+
+Once this is done:
+
+```{r}
+#| output: false 
+#| warning: false  
+library(caret) 
+library(tidyverse) 
+library(lattice)  
+library(mlbadata) #  or, library(mlba)
+```
+
+## Data Structure
+
+Work with *universal bank* loan data.
+
+```{r}
+bank.df <- mlbadata::UniversalBank
+str(bank.df)
+```
+
+Note here the class of interest, *Personal.Loan*, is a numeric variable, with 0 as failure and 1 as success. In `caret`, the Class is a factor variable with the first level being the class of interest ( Class 1 vs Class 2). So before we use the `caret` library functions, we need to factor and relevel the outcome variable.
+
+```{r}
+bank.df$Personal.Loan <- factor(bank.df$Personal.Loan, 
+                                labels = c("No", "Yes")) |> 
+                        relevel(ref = "Yes")
+
+
+# Drop ZIP.Code and recode education
+bank.df <- bank.df |> select(! c(ZIP.Code, ID)) |> 
+  mutate(Education = factor(Education, levels = c(1, 2, 3),
+                            labels = c("UGrad", "Grad", "Adv/Prof")))
+str(bank.df)
+```
+
+In the above dataset *Personal.Loan* now is a categorical variable with the first level being *Yes*.
+
+## Data Partition
+
+Good practice to split 20% for testing. We can create a balanced split on the personal loan variable.
+
+```{r}
+set.seed(1234)
+trIndex <- createDataPartition(bank.df$Personal.Loan,
+                               p = 0.8,
+                               list = FALSE)
+
+
+train.df <- bank.df[trIndex,]
+test.df <- bank.df[-trIndex, ]
+
+#Check the proportion of success
+print(paste0("Full data: ", sum(bank.df == "Yes")/nrow(bank.df)))
+print(paste0("Training Set: ", sum(train.df == "Yes")/nrow(train.df)))
+print(paste0("Test Set: ", sum(test.df == "Yes")/nrow(test.df)))
+```
+
+## Preprocessing
+
+One big question is whether to transform the data before or after the train-test split. Transformations should happen **after** the split and should be done on the training set (set used to fit the model). The transformation parameters should then be applied to the test set.
+
+The rationale for this is that the test set is new and unseen data and is only used to assess the classification accuracy of our model built using the training set. So nothing from it should influence model building process.
+
+Suppose we want to center and scale the data. The two parameters are mean and standard deviation of the predictors. These should be calculated on the training set and then applied to both, the training as well as the test set to carry out the transformations. `caret` allows for two approaches to do this.
+
+1.  We can explicitly preprocess training set and apply to test. Here we first call the function `preProcess()` on the training set and then use `predict()` on both, the training and test set.
+2.  We can call preprocess function from the `train()` function discussed below.
+
+For the first approach:
+
+```{r}
+train.vals <- preProcess(train.df, method = c("center", "scale"))
+
+train.trnf <- predict(train.vals, train.df)
+
+#Use these parameters (i.e. mean and sd of the training set) on the test set too
+test.trnf <- predict(train.vals, test.df)
+ 
+glimpse(test.trnf)
+```
+
+In the above transformation, *Education* did not get transformed.
+
+## Model Training
+
+The `train` function can be used to
+
+-   evaluate, using resampling, the effect of model tuning parameters on performance
+
+-   choose the "optimal" model across these parameters
+
+-   estimate model performance from a training set
+
+It is the workhorse of `caret`. We can use a resampling method to split the training set into various partitions, run a particular model using the `method` argument, provide a set of model tuning parameter values and `train()` will determine the best set of parameter values based on the average performance on the validation set.
+
+We will illustrate this with a simple logisitic regression with no tuning and then run a penalized logistic regression model.
+
+### Basic Logistic Regression
+
+First, we define the resampling method and enable parallel processing.
+
+```{r}
+set.seed(89)
+fitCntrl <- trainControl(method = "repeatedcv",
+                         number = 5, # 5-fold CV
+                         repeats = 3, #  three repeats
+                         allowParallel = TRUE)
+```
+
+This function will be used for the basic logistic as well as penalized logistic. Now, set up the `train` function.
+
+```{r}
+
+logistic1 <- train(Personal.Loan ~ Age + Income + CreditCard,
+                   data = train.trnf,
+                   method = "glm", # the method can be changed to other algorithms
+                   family = "binomial", # this specifies logistic
+                   trControl = fitCntrl # calls out the trainControl specification
+                   )
+logistic1
+
+summary(logistic1)
+```
+
+Instead of accuracy, we can switch to *ROC* as the metric to choose the parameters. However, any time probability based metrics are needed, the `trainControl()` function has to be modified to obtain predicted probabilities.
+
+```{r}
+set.seed(89)
+fitCntrl <- trainControl(method = "repeatedcv",
+                         number = 10, # 10-fold CV
+                         repeats = 3, #  three repeats
+                         allowParallel = TRUE,
+                         #Note the following new commands
+                         classProbs = T,
+                         summaryFunction = twoClassSummary) 
+```
+
+```{r}
+
+logistic2 <- train(Personal.Loan ~ Age + Income + CreditCard,
+                   data = train.trnf,
+                   method = "glm", # the method can be changed to other algorithms
+                   family = "binomial", # this specifies logistic
+                   trControl = fitCntrl, # calls out the trainControl specification
+                   metric = "ROC")
+logistic2
+
+summary(logistic2)
+```
+
+We can use this model to predict the outcome on the test set and obtain a confusion matrix.
+
+```{r}
+test.trnf.pred <- predict(logistic2, newdata = test.trnf)
+confusionMatrix(data = test.trnf.pred,
+                reference = test.trnf$Personal.Loan)
+```
+
+In the above example we first transformed the data and then ran the logistic regression on it. However, the `train` function allows for pre-processing to be done in place and the parameters from the train function are applied to the test data as well while obtaining the predicted class.
+
+```{r}
+logistic3 <- train(Personal.Loan ~ Age + Income + CreditCard,
+                   data = train.df,
+                   preProc = c("center", "scale"), #Pre-Proc can be done here
+                   method = "glm", # the method can be changed to other algorithms
+                   family = "binomial", # this specifies logistic
+                   trControl = fitCntrl, # calls out the trainControl specification
+                   metric = "ROC")
+logistic3
+
+summary(logistic3)
+```
+
+Note that if pre-processing is done in the `train` function, `caret` will automatically apply the same transformation to the test set when the `predict()` function is called. Now predict the class of test set (no transformed) and get the confusion matrix.
+
+```{r}
+test.pred <- predict(logistic3, newdata = test.df)
+confusionMatrix(data = test.pred,
+                reference = test.df$Personal.Loan)
+```
+
+Let's compare the output of the two models
+
+```{r}
+table(test.pred == test.trnf.pred)
+```
+
+So the class predictions are identical in both cases. It may be more convenient to call the `preProc` function from within the `train` function, as done above. However, if you do need to work with the standardized data anyways, you could do preprocessing before the train step.
+
+## Tuning the model parameters
+
+The above `trainControl` function with 10-fold cross-validation repeated 3 times has been an overkill as in the simple logistic regression model, there isn't any parameter to tune. Suppose now we want to run a penalized logistic regressions where there is a penalty on the number of parameters. We will use a variation of the elastic net where a penalty is added to the square of the parameters like the ridge regression and to the absolute value of the parameters, like the lasso regression. The model now maximizes log of the binomial likelihood function $L(p)$ minus the penalty. Thus, maximize: $$  log L(p) - \lambda\Big[(1 - \alpha)\sum_{j=1}^p\beta_{j}^2  + \alpha \sum_{j=1}^P|\beta_j|\Big] $$
+
+Here \$ \alpha \$ is the mixing rate which controls the extent of weight on ridge vs lasso and \$ \\lambda \$ controls the weight on the penalty. Both these can be tuned using the `glmnet` method in train.
+
+```{r}
+glmn_grid <- expand.grid( .alpha = seq(0, 1, 0.1),
+                          .lambda = seq(0.01, .3, length =20))
+nrow(glmn_grid)
+```
+
+So the model will tune over a space of `r nrow(glmn_grid)` parameter value combinations.
+
+```{r}
+
+glmnetMod <- train(Personal.Loan ~ .,
+                   data = train.df,
+                   preProc = c("center", "scale"),
+                   trControl = fitCntrl,
+                   method = "glmnet",
+                   tuneGrid = glmn_grid,
+                   metric = "ROC")
+
+glmnetMod
+```
+
+Thus the optimal value of alpha was 0.1 and that of lambda was 0.01. The penalty had only a small influnce on choice of the variables. One reason could be that the predictor set was small to begin with. The predictors used:
+
+```{r}
+predictors(glmnetMod)
+```
+
+So, all the predictors were used. We can also see the relative importance of these variables. This is an important step as for most machine learning models, the individual parameter estimates of the predictor variables will not be obtained as in the case of regression or logistic regression type of models. The variable importance table can provide some business context for the results.
+
+```{r}
+varImp(glmnetMod)
+```
+
+Let's obtain the confusion matrix from the test set.
+
+```{r}
+glmnClass <- predict(glmnetMod, newdata = test.df)
+confusionMatrix(data = glmnClass,
+                reference = test.df$Personal.Loan)
+```

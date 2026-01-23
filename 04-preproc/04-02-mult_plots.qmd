@@ -1,0 +1,209 @@
+---
+title: "04-01-summ-cor"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Cleaning
+
+A first step to any analysis is examining the descriptive statistics from the dataframe and so some preliminary pre-processing.
+
+Load the required libraries
+
+```{r}
+#| echo: false
+
+
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(psych)
+library(hablar)
+library(skimr)
+library(purrr)
+library(readr)
+library(patchwork)
+library(mlbadata)
+```
+
+Converting variables to dummy variables
+
+```{r}
+
+housing.df <- mlbadata::BostonHousing
+# convert CHAS and CAT..MEDV to factors
+
+cols <- c("CHAS", "CAT.MEDV")
+
+housing.df[cols] <- map(housing.df[cols], 
+                        factor, 
+                        levels = c(1, 0),
+                        labels = c("Yes", "No"))
+
+
+head(housing.df)
+```
+
+*Note about variable names*: Generally, variable names should not contain spaces. If `read.csv()` is used, a `.` will be inserted instead of spaces. On the other hand, when `read_csv` is used, the spaces between variable names is retained. So when referring to these variables in `dplyr` functions, which expect the name to be *unquoted*, you need to enclose the variable names in back-ticks, for example, `` `CAT MEDV` ``.
+
+There are two-factor variables in the above dataset: CHAS and CAT MEDV. We first create a vector with these two columns and then apply (map) the factor function to the list of these two variables. The syntax of `map()` function is:
+
+```         
+map(.x, .f, …)
+```
+
+The `...` means that various arguments from the chosen `f.` or the function can be passed here. Thus, we first made 1 as the first level and then added the labels Yes and No for 1 and 0 respectively. Note, this format is important. We will do machine learning using the `caret()` package. The default setup for caret is that class 1 will be the reference class.
+
+```{r}
+glimpse(housing.df)
+```
+
+## Generating multiple plots
+
+Some prelim plots with selected variables:
+
+```{r}
+selected.vars <- c("MEDV", "CHAS" ,"RM", "ZN", "PTRATIO", "AGE", "CRIM")
+
+df1 <- housing.df[, selected.vars]
+
+for (i in 3:ncol(df1)) {
+  print(df1 |> 
+    ggplot(aes(x = df1[,i], color = CHAS)) +
+    geom_density() +
+    labs(x = colnames(df1[i]))) 
+    }
+
+for (i in 3:ncol(df1)) {
+  df1 |> 
+    ggplot(aes(x = df1[,i], color = CHAS)) +
+    geom_density() +
+    labs(x = colnames(df1[i]))
+    }
+
+df1 |> 
+    ggplot(aes(x = RM, color = CHAS)) +
+    geom_density() +
+    labs(x = "RM")
+
+```
+
+The above method creates five separate plots. You can view these plots by going to the "Plots" tab to the right and using the Arrow key to navigate the plots.
+
+What if wanted to get these five plots on a single page (view). We can use a function, `wrap_plots()` from the `patchwork` library. This function takes a *list* of ggplot objects and arranges them in a grid. The steps for this are as follows:
+
+1.  Create an empty list
+2.  Save each graph as the i'th element of that list.
+3.  Provide that list of graphs to `wrap_plots()`.
+
+```{r}
+plot_list <- list() #creates an empty list
+for (i in 3:ncol(df1)){ # generates a sequence of numbers from 3 to 7
+  print(i) # prints those numbers
+  plot_list[[i-2]] <- colnames(df1[i]) # See note 1 below
+}
+plot_list
+```
+
+What we have done above is created an empty list. We will store our plots there. We want to extract 3rd to the last element of df1 ie. variable names from `RM` to `CRIM`. However, the index for `RM` is 3. We want this to be the first element of the list so we do `i-2 = 3 - 2 = 1`. Below, we apply the same principle but instead of populating the list with just the names, we are populating it with the five charts that we crated above.
+
+```{r}
+plot_list <- list()
+for (i in 3:7) {
+  plot_list[[i-2]] <- df1 |> 
+    ggplot(aes(x = df1[,i], color = CHAS)) +
+    geom_density() +
+    labs(x = colnames(df1[i]))
+}
+
+wrap_plots(plot_list, ncol = 2)
+```
+
+### A detour to functional programming:
+
+Using the `purrr` functional programming framework:
+
+```{r}
+
+plot_list2 <- map(names(df1[3:ncol(df1)]), function(myColNames){
+  ggplot(df1, aes(x = .data[[myColNames]], color = CHAS)) +
+    geom_density() +
+    labs(x = myColNames)
+  })
+plot_list2
+
+```
+
+*How does the above code work?*
+
+`map()` function outputs a list, which is saved at `plot_list2`. The `map()` function itself takes each element of the list/vector supplied to it and applies the function given as it's argument to that element. The functions can be pre-existing, as in the case of factor example above, or it can be defined in the moment. Here, we are creating the function that takes it's argument and passes it to `ggplot`.
+
+```{r}
+#| eval: false
+
+function(colName){
+  ggplot(df2, aes(x = .data[[colName]], color = CHAS)) +
+    geom_density() +
+    labs(x = colName)
+  }
+```
+
+`ggplot`'s first argument is the dataframe and then the mapping arguments. The x axis is the element of the supplied dataframe, here df2, given by the variable, `colName`. For example, the first instance of the loop assigns "RM" to i. The argument `.data[[colName]]` translates to `df2[["RM"]]`, which extracts the column "RM" as a vector to be passed into ggplot.
+
+Here, again each chart is created in a separate page. We can use the `patchwork` library's `wrap_plots()` function. It is pretty nifty!
+
+```{r}
+wrap_plots(plot_list2, ncol =2)
+```
+
+Now, let's create a scatter chart. Note that because we are calling the variables names programatically, we have to use a special `dplyr` pronoun, `.data` and then call the function.
+
+```{r}
+plot_list3 <- map(names(df1[3:ncol(df1)]), function(col_name){
+  ggplot(df1, aes(x = .data[[col_name]], y = MEDV)) +
+    geom_point(aes(color = CHAS)) +
+    labs(x = col_name)
+  })
+
+wrap_plots(plot_list3, ncol =2)
+
+```
+
+Can you now add to the above code to add a regression line without the confidence intervals? *Hint: Look up geom_smooth()*
+
+```{r}
+plot_list4 <- map(names(df2[3:ncol(df2)]), function(col_name){
+  ggplot(df2, aes(x = .data[[col_name]], y = "MEDV")) +
+    geom_point(aes(color = CHAS)) +
+    ---------------- +
+    labs(x = col_name)
+  })
+
+wrap_plots(--------)
+
+
+```
+
+Finally, we can also create box plots by partitioning out the factor variable.
+
+```{r}
+  df1 |> 
+    ggplot(aes(y = MEDV, x = CHAS)) +
+    geom_boxplot() 
+```
+
+**Homework: Your turn:**
+
+Create multiple box plots like the above two examples. You can either use the loop approach or the functional programming approach. Save the output as a pdf file and upload that to Moodle. (Note, we do not need to render the whole file. I just need to see the final output of the code below
+
+```{r}
+
+```
+
+```         
+```

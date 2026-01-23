@@ -1,0 +1,128 @@
+---
+title: "HW04-reg-case"
+format: html
+editor: visual
+---
+
+## Regression Case Study
+
+In this case study we will run various regression model selection algorithms to predict the price of used Corollas over the entire dataset and over the set of 39 feature variables.
+
+### Your Assignment:
+
+Below I have provided the code for carrying out a forward selection algorithm in `caret`. Go through the code carefully and replicate the analysis for either backward or sequential selection (that is, either part 2 or 3). Then, ideally, complete parts 4-6 but for sure part 4 (Lasso regression). Then compare the performance of all the models on the test set.
+
+```{r}
+library(tidyverse)  
+library(broom)  
+library(forecast)  
+library(caret) 
+library(mlbadata) 
+library(fastDummies)
+
+```
+
+```{r}
+corolla.df <- mlbadata::ToyotaCorolla
+```
+
+```{r}
+corolla.df <- mlbadata::ToyotaCorolla
+
+main.df <- corolla.df |> 
+    select(-c(Id, Model, Mfg_Month, Mfg_Year)) |> 
+    dummy_cols(remove_first_dummy = T,
+               remove_selected_columns = T)
+
+
+```
+
+Create a 80-20 split
+
+```{r}
+set.seed(14)
+trnInd <- createDataPartition(main.df$Price, p = 0.8, list = F)
+train.df <- main.df[trnInd,]
+test.df <- main.df[-trnInd,]
+```
+
+### Tasks:
+
+Run the following models, tuning the hyperparameters using a 5-fold cross-validation sampling and compare the model performance on the test set. Make sure to **center and scale the training data** while fitting the three penalized regression models.
+
+1.  Forward selection
+2.  Backward selection
+3.  Sequential selection
+4.  Lasso regression
+5.  Ridge regression
+6.  Elastic Net
+
+What are the values of the tuned parameter of the best-performing model?
+
+\
+\######################################
+
+Set up the train control function for the models
+
+```{r}
+fitCntrl <- trainControl(method = "cv", number = 5,
+                         allowParallel = T)
+```
+
+The next object we need to specify is the tuning grid. For the model selection functions, the tuning parameter is the number of variables to include in the model. We can define a grid using `nvmax` as before, or we can just specify the length of tuning grid. In this example, we have 43 independent variables. We could specify the tune length to be, say, 35.
+
+1.  Forward selection
+
+Step (i)
+
+```{r}
+forward <- train(Price ~ . , data = train.df,
+                 method = "leapForward",
+                 trControl = fitCntrl,
+                 tuneLength = 35)
+
+
+```
+
+Step (ii) Now, we can examine how many variables were chosen. `$bestTune` object. We can also examine the cv performance metrics using the `$results` dataset. Let's unpack these.
+
+```{r}
+forward$bestTune
+
+```
+
+Step (iii). So the best tuning happens with 15 variables. This is the 14th model run and stored by caret in the `$finalModel` list. Before we examine it, let's look at the results returned.
+
+```{r}
+forward$results
+```
+
+Step (iv). We can see that the 14th row corresponds to `nvmax = 15` and has the lowest RMSE. We can filter this out too:
+
+```{r}
+filter(forward$results, nvmax == forward$bestTune$nvmax)
+```
+
+Step (vi). We can now look at the coefficients of this best tuned model. There are several ways to do this. We could ask for the 14th model saved or could just get the row corresponding to the lowest RMSE.
+
+```{r}
+coef(forward$finalModel, which.min(forward$results$RMSE))
+```
+
+It is these coefficient estimates that will be used to predict the price on the test dataset. Let's start a list of estimates and save the above.
+
+```{r}
+coeff_est <- list()
+coeff_est$forward <- coef(forward$finalModel, which.min(forward$results$RMSE))
+```
+
+Step (vii). Next obtain the performance on the test set.
+
+```{r}
+Price.for <- predict(forward, newdata = test.df)
+forward_per <- postResample(Price.for, test.df$Price)
+
+forward_per
+```
+
+Repeat these steps for Parts 2 and 3.

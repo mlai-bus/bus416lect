@@ -1,0 +1,237 @@
+---
+title: "02-Feature Selection"
+author: "Dr. Jeff Jacob"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Variable/Feature Selection
+
+To avoid overfitting the data, we may want to include only those variables that enhance the predictability of the model. In general, that is assessed by choosing the model that would minimize the RMSE (or other criteria like AIC, BIC) on the validation set.
+
+There are two approaches to feature selection. The first one is based on adding or removing predictors in some sequential way and the second one is based on imposing a penalty on the number of predictors. We will implement these methods next.
+
+Load the libraries
+
+```{r}
+library(tidyverse)
+library(broom)
+library(forecast)
+library(caret)
+library(mlbadata)
+library(fastDummies)
+```
+
+Like before, we will use the first 1000 observations and some selected variables to predict the price of used Corollas
+
+```{r}
+car.df <- mlbadata::ToyotaCorolla
+# use first 1000 rows of data
+car.df <- car.df[1:1000, ]
+# select variables for regression
+
+
+#convert fuel type to factor
+car.df$Fuel_Type <- as.factor(car.df$Fuel_Type)
+
+selected.var <- c(3, 4, 7, 8, 9, 10, 12, 13, 14, 17, 18)
+
+car.df.sel <- car.df[, selected.var]
+glimpse(car.df.sel)
+
+
+```
+
+Here, we will explicitly create a full rank dummy variables (leaving out one category unlike that in one-hot encoding) and then partition the data to a 60-40 split.
+
+```{r}
+
+
+car.df.dum <- dummy_columns(car.df.sel, remove_first_dummy = T,
+                            remove_selected_columns = T)
+
+# the above function is from the fastDummies package. It is more intuitive than
+#  the corresponding function in caret.
+
+
+set.seed(1)
+trainInd <- createDataPartition(car.df.dum$Price, p = 0.6, list = F)
+train.df <- car.df.dum[trainInd, ]
+valid.df <- car.df.dum[-trainInd, ]
+```
+
+### Forward / backward and stepwise
+
+**Forward Selection** starts with just the intercept and variables with the lowest p value are added sequentially. The algorithm stops when the contribution of additional predictors is not statistically significant. The main disadvantage of this method is that the algorithm will miss pairs or groups of predictors that perform very well together but perform poorly as single predictors.
+
+**backward elimination** Algorithm starts with a full model and eliminates sequentially the least significant variables. The algorithm stops when only significant variables remain. Again, a disadvantage is that the model would miss interactions or relationships between predictors.
+
+**Stepwise** or **sequential elimination** has features of both the above algorithms. It starts with forward selection. But at each step, like in backward elimination, non-significant variables are eliminated.
+
+These stepwise procedures may do a good enough job for prediction purposes, but if the aim of the analysis explanatory modeling, the choice of variables should be driven by business/economics domain knowledge.
+
+We will implement these algorithms in the `caret` package. The default settings in caret are to draw 25 bootstraps samples of the data with replacement, tune the model over three values of the training parameters- here,the number of predictors to be included- and then choose the model with the *lowest RMSE*. That model is put in the `finalModel` parameter. First, we will build the model with these default settings and then supply a tuning grid of 2 to 10 variables.
+
+```{r}
+set.seed(123)
+forwd.1 <- train(Price  ~ ., data = train.df,
+                 method = "leapForward")
+forwd.1
+```
+
+The default tuning space was 2, 3 or 4 predictors excluding the intercept, and `nvmax = 4` was chosen based on *the average RMSE from the 25 bootstrapped samples that were drawn*. In each of these cases, variables were added based on the **forward selection** algorithm. So, there is not a lot going on here.
+
+The neat thing about caret is that this **final model is saved under the** `finalModel` label. This can be easily extracted and the specific variables parsed out for further model building.
+
+```{r}
+
+# to see what variables got selected
+summary(forwd.1)
+ 
+#We can view the RMSE
+
+forwd.1$results$RMSE 
+# We see that the third model has the lower RMSE
+
+which.min(forwd.1$results$RMSE)
+
+# to get the coefficient estimates of this model
+coef(forwd.1$finalModel,3)
+
+#or
+coef(forwd.1$finalModel,which.min(forwd.1$results$RMSE))
+
+finModel1 <- forwd.1$finalModel
+tidy(finModel1)[3,]
+```
+
+Let us run forward selection on upto 10 variables.
+
+```{r}
+optimal.n <- expand.grid(nvmax = 1:10) #creates a dataset of the values to nvmax to tune
+set.seed(123)
+forwd.2 <- train(Price ~ . , data = train.df,
+                 method = "leapForward",
+                 tuneGrid = optimal.n )
+forwd.2
+
+nvchosen <- which.min(forwd.2$results$RMSE)
+```
+
+Here, a model with `r nvchosen` variables gets chosen.
+
+```{r}
+summary(forwd.2)
+
+
+```
+
+Let us extract these names.
+
+```{r}
+
+which.min(forwd.2$results$RMSE)
+
+tidy(coef(forwd.2$finalModel,which.min(forwd.2$results$RMSE)))
+
+#Let's get the names (excluding the intercept)
+frd.names <- names(coef(forwd.2$finalModel, which.min(forwd.2$results$RMSE)))[-1]
+
+# We could then only select the sample with these variables. For example
+train.df.sel <- train.df[, names(train.df) %in% c(frd.names) ]
+
+# Create a list of the variables chosen and the RMSE. This can be comapared
+## across the three models.
+
+forward <- list(vars = frd.names , rmse = min(forwd.2$results$RMSE))
+```
+
+In `caret`, it is very easy to use a different algorithm, by just changing the `method =` argument in the `train()` function. Forward, Backward and Sequential have the same tuning parameter: `nvmax`. Thus, we do not have to change the tuneGrid function.
+
+### Backward elimination
+
+```{r}
+set.seed(123)
+bckwrd <- train(Price ~ . , data = train.df,
+                 method = "leapBackward",
+                 tuneGrid = optimal.n)
+bckwrd
+which.min(bckwrd$results$RMSE)
+
+```
+
+Interestingly, here a model with `r which.min(bckwrd$results$RMSE)` variables are chosen. We can again obtain the name of the variables and the coefficients as well.
+
+```{r}
+
+which.min(bckwrd$results$RMSE)
+
+coef(bckwrd$finalModel,which.min(bckwrd$results$RMSE))
+
+#Let's get the names (excluding the intercept)
+bckwrd.names <- names(coef(bckwrd$finalModel, which.min(bckwrd$results$RMSE)))[-1]
+
+bckwrd.names
+
+backward <- list(vars = bckwrd.names , rmse = min(bckwrd$results$RMSE))
+
+```
+
+Both backward and forward gave the same model.
+
+### Sequential selection
+
+```{r}
+set.seed(123)
+seqsel <- train(Price ~ . , data = train.df,
+                 method = "leapSeq",
+                 tuneGrid = optimal.n)
+seqsel
+which.min(seqsel$results$RMSE)
+```
+
+We can again obtain the name of the variables and the coefficients as well.
+
+```{r}
+
+which.min(seqsel$results$RMSE)
+
+coef(seqsel$finalModel,which.min(seqsel$results$RMSE))
+
+#Let's get the names (excluding the intercept)
+seqsel.names <- names(coef(seqsel$finalModel, which.min(seqsel$results$RMSE)))[-1]
+
+seqsel.names
+
+stepwise <- list(vars =seqsel.names , rmse = min(seqsel$results$RMSE))
+
+```
+
+Let's combine all the results
+
+```{r}
+selection.list <- list(forw.sel = forward, back.sel = backward, seq.sel =stepwise)
+selection.list
+```
+
+Though sequential or stepwise selection alrorithm does the best, it includes 10 variables. Backward/forward selections have only four variables. They win on parsimony and do not result in a huge increase in the RMSE. So, one might lean towards this model. Let's examine each of these model's performance on the validation set, that we have not yet touched. Again, the advantage of `caret` is that the best model is already stored in that respective algorithm's object and we only need to predict the price.
+
+```{r}
+
+Price.for <- predict(forwd.2, newdata = valid.df)
+for_sel <- postResample(Price.for, valid.df$Price)
+
+Price.back <- predict(bckwrd, newdata = valid.df)
+back_sel <- postResample(Price.back, valid.df$Price)
+
+Price.seq <- predict(seqsel, newdata = valid.df)
+seq_sel <- postResample(Price.seq, valid.df$Price)
+
+rbind(for_sel, back_sel, seq_sel)
+
+```

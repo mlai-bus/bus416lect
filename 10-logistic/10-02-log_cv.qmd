@@ -1,0 +1,152 @@
+---
+title: "10-02-log_cv"
+format: html
+editor: visual
+error: true
+echo: true
+---
+
+Note: This is the updated project file.
+
+## Assessing the performance of logistic regressions
+
+We will run the model within the \`caret framework.
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+library(tidyverse)
+#library(gains)
+library(caret)
+library(yardstick)
+library(broom)
+library(devtools)
+#install_github("econjjacob/mlbadata")
+library(mlbadata)
+```
+
+Create a stratified data partition. Note that unlike most of `caret` algorithms, `glm` targets the second level as the class of interest.
+
+```{r}
+
+bank.df <- mlbadata::UniversalBank
+bank.df <- bank.df[ , -c(1, 5)]  # Drop ID and zip code columns.
+# treat Education as categorical (R will create dummy variables)
+bank.df$Education <- factor(bank.df$Education, levels = c(1, 2, 3), 
+                            labels = c("Undergrad", "Grad", "advProf"))
+
+bank.df$Personal.Loan <- factor(bank.df$Personal.Loan, 
+                                levels = c(1,0),
+                                labels = c("Yes", "No"))
+bank.df <- bank.df %>% 
+  rename(Loan = Personal.Loan)
+
+# partition data
+set.seed(9876)
+train.index <- createDataPartition(bank.df$Loan, 
+                                   p = 0.6,
+                                   list = F)  
+train.df <- bank.df[train.index, ]
+test.df <- bank.df[-train.index, ]
+
+```
+
+Set up the model in `caret`
+
+```{r}
+set.seed(1111)
+fit.cntrl <- trainControl(method = "none",
+                          allowParallel = TRUE,
+                          classProbs = TRUE,
+                          summaryFunction = twoClassSummary)
+
+
+logit.1 <- train(Loan ~ ., data = train.df,
+                 trControl = fit.cntrl,
+                 method = "glm",
+                 family = "binomial")
+logit.1
+summary(logit.1$finalModel)
+tidy(logit.1$finalModel)
+tidy(logit.1$finalModel, exponentiate = T)
+```
+
+Save the outcome and predictions in the test data.
+
+```{r}
+
+logit.1_results <- bind_cols(predClass = predict(logit.1, newdata = test.df),
+                            predProb = predict(logit.1, newdata = test.df, type = "prob")$"Yes",
+                            Actual = test.df$Loan,
+                            model = "logit.1")
+
+
+
+
+```
+
+### Regularized Logistic Regression
+
+The above model included all the independent variables. We can run a Lasso logistic regression model to decide on what variables to include. Note that this is fairly simple model, in terms of the number of coefficients etc. Thus, it will be less prone to over fitting. In this case, `lambda` will not be very large (close to zero). We can restrict the range of `lambda` values while doing the grid search.
+
+```{r}
+set.seed(1111)
+fit.cntrl <- trainControl(method = "cv", number = 10,
+                          allowParallel = TRUE,
+                          classProbs = TRUE,
+                          summaryFunction = twoClassSummary)
+lasso.search <- expand.grid(lambda = 10^(seq(-2,2, by = .1)),
+                            alpha = 1)
+
+
+logit.cv <- train(Loan ~. , data = train.df,
+                 method = "glmnet",
+                 family = "binomial",
+                 trControl = fit.cntrl,
+                 tuneGrid = lasso.search)
+                 
+logit.cv
+# Here, several models are run so we have to ask for specific model's coefficients
+coef(logit.cv$finalModel, 
+     logit.cv$bestTune$lambda) #this asks for coeff of best tuned model
+# To obtain odds ratio
+exp(coef(logit.cv$finalModel, 
+     logit.cv$bestTune$lambda))
+
+```
+
+Note: In the odds ratio display above, the removed variables have an OR =1, meaning they have no effect in the odds of the outcome variable. This is different than statistical significance.
+
+Now, obtain predictions from this model on the test set.
+
+```{r}
+logit.cv_results <- bind_cols(predClass = predict(logit.cv, newdata = test.df),
+                              predProb = predict(logit.cv, newdata = test.df, type = "prob")$"Yes",
+                              Actual = test.df$Loan,
+                              model = "logit.cv")
+perf_results <- bind_rows(logit.1_results, logit.cv_results)
+```
+
+Now obtain the AUC, ROC and Lift Curves.
+
+```{r}
+perf_results %>% 
+  group_by(model) %>% 
+  roc_auc(Actual,  predProb)
+```
+
+```{r}
+ perf_results %>% 
+  group_by(model) %>% 
+  roc_curve(truth = Actual, predProb) %>% 
+  autoplot()
+```
+
+
+```{r}
+perf_results %>% 
+  group_by(model) %>% 
+  lift_curve(truth =  Actual,  predProb) %>% 
+  autoplot()
+```

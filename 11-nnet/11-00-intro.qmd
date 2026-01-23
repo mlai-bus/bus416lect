@@ -1,0 +1,278 @@
+---
+title: "nn-py"
+format: html
+editor: visual
+---
+
+## Python or R? Why not Both?
+
+### Welcome to the `reticulate` library.
+
+Reticulated python is the world's longest species of snake. `reticulate` is the package which brings in `python` in `R`, thus extending the reach of both languages. What is great about `posit` is that once the `python` environment is correctly set-up, we can use it within the `R` code chunk ('R'eticulated python). What is even more special is that we can use `python` natively as well!
+
+```{r}
+library(reticulate)
+library(mlbadata)
+library(tidyverse)
+library(caret)
+library(nnet)
+library(fastDummies)
+# A virtual python environment has already been setup. We activate it here
+use_virtualenv("mlpyenv")
+```
+
+First to use python natively:
+
+```{python}
+
+```
+
+```{python}
+
+```
+
+```{python}
+4 + 5
+```
+
+```{python}
+print("Hello world! This is python")
+```
+
+```{python}
+2**3
+```
+
+```{python}
+fruits = ["apples", "grapes", "oranges", "melons"]
+
+j = "cheese"
+for i in fruits:
+  print(f"I like {i}. But I like {j} also.")
+```
+
+### Initial Greetings between `R` and `Python`
+
+`R` environment:
+
+```{r}
+text <- "Hello there from R"
+print(text)
+```
+
+`Python` environment:
+
+```{python}
+text = "Hello there from Python"
+print(text)
+```
+
+`R` and `Python` talking to each other:
+
+```{python}
+#Getting python to hear from R
+print(r.text)
+```
+
+```{r}
+#Now R's turn to listen to python
+print(py$text)
+```
+
+### Working with lists
+
+Let's make numeric lists natively in `Python`.
+
+```{python}
+
+a = list(range(1,101))
+print(a)
+min(a)
+max(a)
+
+
+```
+
+Let's say we want to add 10 to each element in the list.
+
+```{python}
+b = []
+
+for i in a:
+  b.append(i + 10)
+
+print(b)
+```
+
+This makes working with numerical data slow in python.
+
+We can aslo import the object `a` into `R` and carry out the above calculation. To access python objects in `R`, we will use the accessor: `py$`
+
+```{r}
+b_r = py$a + 10
+b_r
+```
+
+We can also bring in `b_r` into python using the `.` operator: `r.`
+
+```{python}
+max(r.b_r)
+sum(r.b_r)
+```
+
+This is just scratching the surface. But, as we can see, we can work with `R` and `python` in a harmonious way and even call other software's objects into their own environment.
+
+## Brief on Numerical Python
+
+While, we can not work in a vectorised manner in native `python`, we can also use an extremely powerful package, `numpy` for this. `numpy` is a core package at the heart of machine learning in python which converts lists into arrays and allows for vectorised operations in Python. Let us, very briefly, look at the workings of `numpy`
+
+```{python}
+import numpy as np
+```
+
+The default object on `numpy` is an n- dimensional array (a grid of values). The `rank` of an array is the number of dimension while the `shape` is a tuple giving the number of elements along each dimension.
+
+```{python}
+
+
+a1 = np.array([3, 5, 7, 9])
+print(a1)
+np.ndim(a1)
+
+# or
+
+a1.ndim
+```
+
+Why does `a1.ndim` work? `a1` is an object of the ndarray class and thus inherits all the methods.
+
+```{python}
+type(a1)
+```
+
+To see the shape:
+
+```{python}
+a1.shape
+```
+
+It is a vector with 4 rows. `numpy` broadcasts objects like `R`
+
+```{python}
+a1 + 10
+
+# So the above operation could be done as follow
+
+np.arange(1,101) + 10
+```
+
+`np.arange(start, stop, step)` is generally used to create 1d arrays. We can also create equally spaced arrays using `np.linspace(start, stop, number)`
+
+```{python}
+np.linspace(0,10,5)
+np.linspace(0,10,5).dtype # we can get the data type.
+```
+
+In machine learning, we mainly work with tabular data (2 dimensions). A color image data characterized by RGB pallet is three dimensions, where the first dimension is the color layer and each layer in turn will have the color intensity ranging from 0 to 255 for each pixel. `R` and `Python` have some key differences in the way they print and handle arrays with dim \>2, which we will not cover here. We will work with 2d tabular data.
+
+```{python}
+a2 = np.array(
+  [[2, 5, 6], 
+  [10 , 3, 12], 
+  [2, 6, 1], 
+  [3, 1, 7]])
+  
+print(a2)
+a2.ndim
+a2.shape
+```
+
+Thus, a2 is a two dimensional array (matrix) which 4 rows and three columns. We can index on ndarrays:
+
+```{python}
+a2[0,1] # first row, second object
+a2[0:3,] # first three rows, all columns
+```
+
+3d arrays:
+
+```{python}
+a3 = np.array([[[1, 3, 4], [23, 12, 3], [1, 4, 5]],
+[[2, 4, 1], [34, 12, 9],[4, 1, 7]]])
+
+print(a3)
+a3.ndim
+a3.shape
+```
+
+`a3.shape` shows that there are two layers, each 3x3. To access the 2nd row and 3rd column object from the second layer (3), index as follows- layer, row, column.
+
+```{python}
+a3[1, 1, 2]
+```
+
+### Reshaping arrays
+
+Let's create a 10x10 array.
+
+```{python}
+
+p1 = np.random.randint(0, 256, 100)
+p1.shape
+```
+
+We can chain (`pipe`) steps.
+
+```{python}
+p2 = np.random.randint(0, 256, 100).reshape((10,10))
+p2.shape
+print(p2)
+```
+
+Let's say, we want to normalize this matrix to be between 0 to 1
+
+```{python}
+p3 = p2/255
+print(p3)
+```
+
+Reshaping the 10x10 matrix to a 100x1 array
+
+```{python}
+p4 = p3.reshape(100,1)
+
+# or p4 = np.reshape(p3, (100,1))
+p4.shape
+p4[0:5]
+```
+
+Reshaping back
+
+```{python}
+p5 = p4.reshape(10,10)
+p5.shape
+p5[0, 0:5]
+```
+
+### `numpy` within `R`
+
+Finally, we can use numpy within R. Here, we use the `convert = FALSE` option to not convert numpy objects to r. This is useful if we want to use numpy functions later on.
+
+```{r}
+np <- import("numpy", convert = FALSE)
+np1 <- import("numpy", convert = TRUE)
+```
+
+```{r}
+
+x <- np1$arange(1, 9)
+x
+x <- np$arange(1, 9)
+x
+p6 <- np$random$randint(0, 255, 100L)
+p6
+p7 <- p6$reshape(10L, 10L)
+p7/255
+```
+
+In the above code, 10L means the integer 10. Otherwise, if we just type 10, python will read it as 10. (a float) and throw an error.

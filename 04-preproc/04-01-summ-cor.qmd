@@ -9,7 +9,6 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-
 ## Data Cleaning
 
 A first step to any analysis is examining the descriptive statistics from the dataframe and so some preliminary pre-processing.
@@ -17,38 +16,50 @@ A first step to any analysis is examining the descriptive statistics from the da
 Load the required libraries
 
 ```{r}
+#| echo: false
+
+
 library(tidyverse)
 library(caret)
 library(corrplot)
 library(psych)
 library(hablar)
 library(skimr)
+library(purrr)
+library(readr)
+library(patchwork)
+library(mlbadata)
 ```
-
 
 Load the dataset and convert two variable to factors. We will learn how to use the `apply()` family of functions which apply functions in r to various elements of a list.
 
 ```{r}
-housing.df <- read.csv("BostonHousing.csv", stringsAsFactors = F) 
 
+housing.df <- mlbadata::BostonHousing
 # convert CHAS and CAT..MEDV to factors
 
-cols <- c("CHAS", "CAT..MEDV")
-housing.df[cols] <- lapply(housing.df[cols], factor, levels = c("1", "0"), 
-                           labels = c("Yes", "No"))
+cols <- c("CHAS", "CAT.MEDV")
 
+housing.df[cols] <- map(housing.df[cols], 
+                        factor, levels = c(1, 0),
+                        labels = c("Yes", "No"))
+
+
+head(housing.df)
 ```
 
+*Note about variable names*: Generally, variable names should not contain spaces. If `read.csv()` is used, a `.` will be inserted instead of spaces. On the other hand, when `read_csv` is used, the spaces between variable names is retained. So when referring to these variables in `dplyr` functions, which expect the name to be *unquoted*, you need to enclose the variable names in back-ticks, for example, `` `CAT MEDV` ``.
 
-There are two factor variables in the above dataset: CHAS and CAT..MEDV. We first create a vector with these two columns and then apply (list apply) the factor function to the list of these two function. The syntax of `lapply()` funtion is:
+There are two-factor variables in the above dataset: CHAS and CAT MEDV. We first create a vector with these two columns and then apply (map) the factor function to the list of these two variables. The syntax of `map()` function is:
 
+```         
+map(.x, .f, …)
 ```
-lapply(X, FUN, …)
-```
-The `...` means that various arguments from the chosen `FUNC` can be passed here. Thus, we first made 1 as the first level and then addedd the labels Yes and No for 1 and 0 respectively.
+
+The `...` means that various arguments from the chosen `f.` or the function can be passed here. Thus, we first made 1 as the first level and then added the labels Yes and No for 1 and 0 respectively. Note, this format is important. We will do machine learning using the `caret()` package. The default setup for caret is that class 1 will be the reference class.
 
 ```{r}
-head(housing.df)
+glimpse(housing.df)
 ```
 
 Looking at descriptive stats:
@@ -65,50 +76,67 @@ my_skim(housing.df)
 
 ```
 
-
 We can also create pivot tables. Suppose we want to see average median price by RAD and Charles River.
 
 ```{r}
+
+housing.df %>% summarise(avgVal = mean(MEDV, na.rm = T))
+
 housing.df |> 
   group_by( RAD, CHAS) |> 
-  summarise( Average.Value = mean(MEDV),
+  summarise( averageValue = mean(MEDV, na.rm = T),
              count = n())
+
+
 ```
 
+**Note:** As seen above, we can create Excel-type pivot tables very easily using the `dplyr` functions.
 
-Another critical aspect of pre processing is creating factor variables and interactions. Here, we have two dummy variables, CHAS and CAT..MEDV. Let us create a dummy variable for CHAS and the interaction of CHAS and ROOMS
+Another critical aspect of pre-processing is creating factor variables and interactions. Here, we have two dummy variables, CHAS and CAT MEDV. Let us create a dummy variable for CHAS and the interaction of CHAS and ROOMS
 
 ```{r}
-df1 <- dummyVars(~ CHAS + CHAS:RM, data = housing.df,
+df1 <- dummyVars(~ CHAS + CHAS:RM, data = housing.df)
+df2 <- dummyVars(~ CHAS , data = housing.df)
+dummies.df1 <- predict(df1, newdata = housing.df)
+
+dummies.df2 <- predict(df2, newdata = housing.df)
+
+head(dummies.df2)
+```
+
+Notice that in the above specification, two dummies have been created for `CHAS`, that is, one for each category. If we included both of them in linear regression, we have the *dummy variable trap* or *perfect multicollinearity.* We need to exclude one of the categories. In other words, we need to create a matrix with *full* rank. It is easy in `caret`:
+
+```{r}
+df2 <- dummyVars(~ CHAS + CHAS:RM, data = housing.df,
                  fullRank = T)
 
-housing.df1 <- predict(df1, newdata = housing.df)
+dummies.df2 <- predict(df2, newdata = housing.df)
+head(dummies.df2)
 ```
 
-We can now create a new dataframe where we combine the new dataset with housing.df
+In both these cases, `caret` created a separate data from with the dummy and interaction variables. We can now create a new dataframe where we combine the new dataset with the housing.df
 
 ```{r}
 
-housing.df2 <- cbind(housing.df, housing.df1)
-housing.df2 <- housing.df2 |> 
+housing.df1 <- cbind(housing.df, dummies.df2) |> 
   select(-CHAS)
+head(housing.df1)
 ```
 
+## Dimension reduction: Correlation analysis
 
-## Dimension reduction: Corrlelation analysis
+Having a high correlation between predictor variables can result in multicollinearity in regression-based models. Before any modelling is undertaken. If two variables are highly correlated (say, above a certain threshold like 0.8), the one which is highly correlated with other variables should be removed.
 
-Having a high correlation between predictor variables can result in multicollinearity in regression based models. Before any modelling is undertaken. If two variables are highly correlated (say, above a certain threshold like 0.8), the one which is highly correlated with other variables should be removed.
+`caret` has a built-in function, `findCorrelation()` which follows this algorithm in removing such highly correlated variables.
 
-`caret` has a built in function, `findCorrelation()` which follows this algorithm in removing such highly correlated variables. 
-
-We will first apply some data cleaning methods. We will separate out our dependent variables (MEDV and CAT..MEDV) into a separate dataset, remove categorical variables from the the xvariable dataset and then compute correlations.
+We will first apply some data-cleaning methods. We will separate out our dependent variables (MEDV and CAT MEDV) into a separate dataset, remove categorical variables from the `xvariable` dataset and then compute correlations.
 
 ```{r}
 yvars <- housing.df |> 
-  select(MEDV, CAT..MEDV)
+  select(MEDV, CAT.MEDV)
 
 xvars <- housing.df |> 
-  select(-MEDV, -CAT..MEDV)
+  select(-c(MEDV, CAT.MEDV))
 
 xvarsnum <- xvars |> 
   select_if(is.numeric) #CHAS will get ommited
@@ -143,31 +171,7 @@ Combine this dataset with CHAS and MEDV
 
 ```{r}
 df1 <- cbind(MEDV = yvars$MEDV, CHAS = xvars$CHAS, xvarfin)
+head(df1)
 ```
 
-Some prelim plots with selected variables:
-
-```{r}
-selected.vars <- c("MEDV", "CHAS" ,"RM", "ZN", "PTRATIO", "AGE", "CRIM")
-
-df2 <- df1[, selected.vars]
-for (i in 3:ncol(df2)) {
-  print(df2 |> 
-    ggplot(aes(x = df2[,i], color = CHAS)) +
-    geom_density() +
-    labs(x = colnames(df2[i])))
-    }
-
-for (i in 3:ncol(df2)) {
-  print(df2 |> 
-    ggplot(aes(y = MEDV, x = df2[,i])) +
-    geom_point() +
-    geom_smooth() +
-    labs(x = colnames(df2[i])))
-     }
-#box plots work with categorical x variables
-  df2 |> 
-    ggplot(aes(y = MEDV, x = CHAS)) +
-    geom_boxplot() 
-```
-
+## 
