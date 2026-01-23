@@ -1,179 +1,209 @@
 ---
-title: "Functions"
-format: pdf
-editor: visual
+title: "01-02-functions-intro"
+output: html_document
+editor_options:
+  chunk_output_type: console
 ---
 
-## Functions Basics
+### Why Functions?
 
-The basic idea behind functions is to avoid writing repeatable code.
+Functions allow us to:
+- avoid repeating code
+- make programs easier to read
+- break complex problems into smaller pieces
+- reuse logic across projects
 
-Suppose we want to add 10 to a number or a vector.
+At a high level, a function:
+- takes **inputs**
+- performs **operations**
+- returns **output**
+
+---
+
+### A Very Simple Function
+
+Let’s start with the simplest possible function.
 
 ```{r}
-x <- 1:5
-x + 10
-
+add_two_numbers <- function(x, y) {
+  x + y
+}
 ```
 
-Suppose this is a common enough operation that is done frequently. We can create a function to do this. Functions have three parts: Name, arguments and body. Let's call our function `add_ten()`
+```{r}
+add_two_numbers(2, 3)
+```
 
-```{r exercise-funct}
+This function:
+- takes two inputs: `x` and `y`
+- returns their sum
 
-add_ten <- function(x){
-  x + 10
+---
+
+### Function Inputs and Outputs
+
+Functions can take any number of inputs.
+
+```{r}
+square_number <- function(x) {
+  x^2
+}
+```
+
+```{r}
+square_number(4)
+```
+
+#### Student practice
+
+```{r exercise-square}
+#| eval: false
+# Write a function that cubes a number
+cube_number <- function(x) {
+  ___
 }
 
-add_ten(10:15)
+cube_number(___)
 ```
 
-Notice a few things. Unlike some other languages, we do not need to return the final value as `R` automatically returns the last computed value.
+---
 
-```{r exercise-funct}
+### Default Arguments
 
-add_ten(x)
-```
-
-```{r exercise-funct}
-#vectorised operation
-add_ten(10:20)
-```
-
-We can also let the user decide what number they want to add and let 10 be the default value in case a number is not supplied.
+Functions can also have **default values**.
 
 ```{r}
-add_num <- function(x, num = 10){
-  # adds a specified number to a vector
-  x + num
+power <- function(x, p = 2) {
+  x^p
+}
+```
+
+```{r}
+power(3)
+power(3, 3)
+```
+
+This allows flexibility while keeping sensible defaults.
+
+#### Student practice
+
+```{r exercise-default_arg}
+#| eval: false
+# Modify the function so the default power is 3
+power <- function(x, p = ___) {
+  x^p
 }
 
-args(add_num)
+power(2)
+power(2, 4)
+```
+
+---
+
+### Returning Values Explicitly
+
+R automatically returns the last expression, but we can also use `return()`.
+
+```{r}
+absolute_difference <- function(x, y) {
+  diff <- x - y
+  return(abs(diff))
+}
 ```
 
 ```{r}
-body(add_num)
-add_num
+absolute_difference(10, 3)
 ```
 
-Let's apply this to our original x
+---
+
+### Functions Inside Functions
+
+Functions can call other functions.
 
 ```{r}
-add_num(x)
+mean_of_squares <- function(x) {
+  squares <- x^2
+  mean(squares)
+}
 ```
-
-```{r exercise-funct}
-add_num(20:25)
-```
-
-```{r exercise-funct_args}
-add_num(20:25, 100)
-```
-
-
-Suppose we want to return the sum, as well as the difference between x and our chosen number.
 
 ```{r}
-add_sub_num <- function(x, num = 10){
-  add_num <- x + num
-  sub_num <- x - num
-  
-  
-  add_num
-  sub_num
-  
+mean_of_squares(c(1, 2, 3, 4))
+```
+
+#### Student practice
+
+```{r exercise-nested_function}
+#| eval: false
+# Write a function that returns the mean of cubed values
+mean_of_cubes <- function(x) {
+  ___
 }
 
-add_sub_num(x, 100)
+mean_of_cubes(c(1, 2, 3))
 ```
 
-The function just returned the last evaluated argument. In this case, we would want to return a list.
+---
 
-```{r exercise-funct_list}
-add_sub_num <- function(x, num = 10){
-  add_num <- x + num
-  sub_num <- x - num
-  list(add_num, sub_num)
+### Writing Cleaner Code with Functions
+
+Functions help keep your analysis clean and readable.
+
+```{r}
+calculate_growth_rate <- function(start, end) {
+  (end - start) / start
+}
+```
+
+```{r}
+calculate_growth_rate(100, 125)
+```
+
+This pattern becomes especially important as projects grow.
+
+---
+
+### Common Mistakes with Functions
+
+A few things to watch out for:
+- forgetting to return a value
+- using variables that exist outside the function
+- mismatching argument names
+
+```{r}
+bad_function <- function(x) {
+  y <- x + 2
+}
+```
+
+```{r}
+bad_function(5)
+```
+
+Notice that this function does not return anything useful.
+
+#### Student practice
+
+```{r exercise-fix_function}
+#| eval: false
+# Fix the function so it returns a value
+fixed_function <- function(x) {
+  y <- x + 2
+  ___
 }
 
-add_sub_num(x)
-
-add_sub_num <- function(x, num = 10){
-  sub_num <- x - num
-  add_num <- x + num
-  
-  list(addition = add_num, subtraction = sub_num)
-}
-
-output <- add_sub_num(x)
-output
+fixed_function(5)
 ```
 
-```{r}
-output
-class(output)
-```
+---
 
-```{r}
-output$subtraction
+### Key Takeaways
 
-output[[1]][c(1,2,5)]
-```
+- Functions encapsulate logic
+- Inputs go inside parentheses
+- Code lives inside `{ }`
+- Functions return values
+- Writing functions early saves time later
 
-```{r}
-y <- add_sub_num(10:20, 5)
-```
-
-
-Accessing elements of a list:
-
-```{r}
-y[[1]]
-```
-
-```{r}
-mean(y$addition)
-```
-
-```{r}
-mean(y)
-
-```
-
-```{r}
-summary(y)
-```
-
-```{r}
-output[[2]][4]
-
-```
-
-Suppose, we want the user to choose the ***operation***.
-
-```{r}
-add_or_sub <- function(x, num = 10, oper = "add"){
-  if (oper == "add"){
-    x + num
-  } else if (oper == "sub"){
-    x - num
-  } else if (oper == "mult"){
-    x * num
-  } else cat("Please choose add, sub or mult")
-}
-
-args(add_or_sub)
-body(add_or_sub)
-add_or_sub(x,  oper = "mult")
-```
-
-```{r exercise-funct_apply }
-add_or_sub(x, num = 100)
-```
-
-```{r exercise-funct_args}
-add_or_sub(x, oper =  "sub", num = 5)
-```
-
-```{r exercise-funct_vectorised}
-add_or_sub(100:105)
-```
+We will build on this idea extensively throughout the course.
