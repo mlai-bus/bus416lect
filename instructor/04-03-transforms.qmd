@@ -1,0 +1,257 @@
+---
+title: "04-03-transforms"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Data Transformations and Dimension Reduction
+
+### Learning objectives
+
+After completing this module, you should be able to:
+
+* Standardize numeric predictors using centering and scaling
+* Explain why transformations are necessary prior to modeling
+* Interpret covariance, correlation, and variance share
+* Apply Principal Components Analysis (PCA) to reduce dimensionality
+* Decide how many principal components to retain
+* Use PCA as a preprocessing step in a modeling pipeline
+
+---
+
+## Load required libraries
+
+```{r}
+library(tidyverse)
+library(caret)
+library(readr)
+library(mlbadata)
+```
+
+---
+
+## Standardizing data
+
+Many modeling techniques (including PCA, kNN, and regularized regression) are **scale-sensitive**. Variables measured on larger scales can dominate distance calculations and variance-based methods.
+
+We begin with the cereals dataset.
+
+```{r}
+df1 <- mlbadata::Cereals
+glimpse(df1)
+```
+
+The `caret::preProcess()` function provides a unified way to apply common preprocessing steps.
+
+```{r}
+transf <- preProcess(df1, method = c("center", "scale"))
+df2 <- predict(transf, newdata = df1)
+
+glimpse(df2)
+```
+
+### Interpretation
+
+* Numeric variables are centered and scaled
+* Character variables are left unchanged
+* Each transformed variable now has:
+
+  * mean ≈ 0
+  * standard deviation ≈ 1
+
+---
+
+### Student exercise: standardization check
+
+```{r}
+#| eval: false
+# Verify that one numeric variable in df2
+# has mean approximately 0 and sd approximately 1
+```
+
+---
+
+## Principal Components Analysis (PCA): two-variable illustration
+
+To build intuition, we start with just **two variables**:
+
+* calories
+* rating
+
+```{r}
+df1.sm <- df1[, c(4, 16)]
+
+summary(df1.sm)
+cov(df1.sm)
+cor(df1.sm)
+```
+
+These variables are strongly correlated.
+
+If we treat **variance as information**, we can compute the relative share of information carried by each variable.
+
+```{r}
+info.share <- cov(df1.sm) / sum(diag(cov(df1.sm))) * 100
+info.share
+```
+
+### Interpretation
+
+* Calories accounts for most of the total variation
+* Ratings contribute less, but still meaningful variation
+* PCA seeks **new axes** that capture this shared information efficiently
+
+---
+
+### Student exercise: correlation reasoning
+
+```{r}
+#| eval: false
+# Why is high correlation between predictors
+# problematic for regression-based models?
+```
+
+---
+
+## Performing PCA
+
+```{r}
+pcs <- prcomp(df1.sm)
+summary(pcs)
+```
+
+The summary shows:
+
+* standard deviation of each PC
+* proportion of variance explained
+* cumulative variance explained
+
+```{r}
+pcs$rotation
+```
+
+### Interpretation
+
+* The rotation matrix gives the **weights** for each variable
+* Each principal component is a linear combination of the original variables
+
+```{r}
+scores <- pcs$x
+head(scores, 12)
+```
+
+The scores represent the data in the **new coordinate system**.
+
+---
+
+## Visualizing PCA results
+
+```{r}
+# Optional installation for local machines
+# install.packages("remotes")
+library(remotes)
+# install_github("vqv/ggbiplot")
+
+library(ggbiplot)
+```
+
+```{r}
+ggbiplot(pcs)
+ggscreeplot(pcs)
+```
+
+### How to read these plots
+
+* **Biplot**:
+
+  * Arrow direction shows variable contribution
+  * Arrow length indicates importance
+* **Scree plot**:
+
+  * Shows variance explained by each PC
+  * The “elbow” suggests how many components to retain
+
+---
+
+## PCA with standardized variables (full dataset)
+
+Because variables are measured on different scales, PCA should be performed on **standardized data**.
+
+```{r}
+df3 <- na.omit(df1)
+
+full.pcs1 <- prcomp(df3[, -c(1:3)], scale. = TRUE)
+summary(full.pcs1)
+```
+
+```{r}
+full.pcs1$rotation[, 1:8]
+```
+
+Approximately 8 principal components capture about 95% of the total variance.
+
+```{r}
+head(full.pcs1$x, 12)
+```
+
+```{r}
+ggbiplot(full.pcs1)
+ggscreeplot(full.pcs1)
+```
+
+---
+
+### Student exercise: component selection
+
+```{r}
+#| eval: false
+# Based on the scree plot:
+# How many principal components would you retain?
+# Why?
+```
+
+---
+
+## PCA as a preprocessing step in modeling
+
+Often, PCA is not the final analysis but an **intermediate transformation** before modeling.
+
+The `caret` framework allows PCA to be included directly in preprocessing.
+
+```{r}
+full.pcs2 <- preProcess(
+  df3[, -c(1:3)],
+  method = c("center", "scale", "pca"),
+  thresh = 0.85
+)
+
+full.pcs2
+full.pcs2$rotation
+```
+
+```{r}
+df3.transf <- predict(full.pcs2, newdata = df3)
+glimpse(df3.transf)
+```
+
+### Interpretation
+
+* PCA is applied automatically after scaling
+* Only enough components are retained to explain 85% of the variance
+* The result is a lower-dimensional, uncorrelated feature set
+
+---
+
+## Key takeaways
+
+* Transformations are essential for scale-sensitive models
+* PCA reduces dimensionality while preserving information
+* Correlation motivates dimension reduction
+* PCA can be integrated seamlessly into modeling pipelines
+* Feature engineering decisions affect model stability and interpretability
+

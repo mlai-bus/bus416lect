@@ -1,0 +1,279 @@
+---
+title: "10-02 Penalized Logistic Regression with Cross-Validation"
+format: html
+editor: visual
+error: true
+echo: true
+---
+
+## Learning objectives
+
+After completing this module, students should be able to:
+
+- Fit baseline logistic regression models using `caret`
+- Explain why regularization is useful in classification
+- Implement LASSO-penalized logistic regression
+- Use cross-validation to tune regularization strength
+- Compare logistic models using ROC, AUC, and lift curves
+
+---
+
+## Assessing the performance of logistic regression models
+
+In this module, we assess the performance of logistic regression models using the **caret framework**. We begin with a baseline (unpenalized) logistic regression and then extend it to a **penalized (LASSO) logistic regression** using cross-validation.
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(caret)
+library(yardstick)
+library(broom)
+library(mlbadata)
+```
+
+---
+
+## Data preparation and stratified partitioning
+
+```{r}
+bank.df <- mlbadata::UniversalBank
+bank.df <- bank.df[, -c(1, 5)]  # Drop ID and ZIP code
+
+bank.df$Education <- factor(
+  bank.df$Education,
+  levels = c(1, 2, 3),
+  labels = c("Undergrad", "Grad", "Adv/Prof")
+)
+
+bank.df$Personal.Loan <- factor(
+  bank.df$Personal.Loan,
+  levels = c(1, 0),
+  labels = c("Yes", "No")
+)
+
+bank.df <- bank.df |> 
+  rename(Loan = Personal.Loan)
+
+glimpse(bank.df)
+```
+
+Create a **stratified split** so class proportions are preserved.
+
+```{r}
+set.seed(9876)
+
+train.index <- createDataPartition(
+  bank.df$Loan,
+  p = 0.6,
+  list = FALSE
+)
+
+train.df <- bank.df[train.index, ]
+test.df  <- bank.df[-train.index, ]
+```
+
+---
+
+## Baseline logistic regression (no regularization)
+
+We first estimate a logistic regression using **all predictors** and no resampling.
+
+```{r}
+set.seed(1111)
+
+fit.cntrl <- trainControl(
+  method = "none",
+  allowParallel = TRUE,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary
+)
+
+logit.1 <- train(
+  Loan ~ .,
+  data = train.df,
+  method = "glm",
+  family = "binomial",
+  trControl = fit.cntrl
+)
+
+logit.1
+```
+
+### Model coefficients
+
+```{r}
+summary(logit.1$finalModel)
+tidy(logit.1$finalModel)
+tidy(logit.1$finalModel, exponentiate = TRUE)
+```
+
+---
+
+### Student Exercise 1 — Baseline interpretation
+
+```{r}
+#| eval: false
+
+# Identify one predictor with an odds ratio greater than 1.
+# What does this imply about loan acceptance?
+```
+
+---
+
+## Test-set predictions (baseline model)
+
+```{r}
+logit.1_results <- bind_cols(
+  predClass = predict(logit.1, newdata = test.df),
+  predProb  = predict(logit.1, newdata = test.df, type = "prob")$Yes,
+  Actual    = test.df$Loan,
+  model     = "logit.1"
+)
+```
+
+---
+
+## Penalized logistic regression (LASSO)
+
+The baseline model includes all predictors. To reduce overfitting and encourage parsimony, we now apply **LASSO regularization**, which shrinks some coefficients exactly to zero.
+
+We tune the penalty parameter ( \lambda ) using **10-fold cross-validation**.
+
+```{r}
+set.seed(1111)
+
+fit.cntrl <- trainControl(
+  method = "cv",
+  number = 10,
+  allowParallel = TRUE,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary
+)
+
+lasso.search <- expand.grid(
+  lambda = 10^(seq(-2, 2, by = 0.1)),
+  alpha  = 1
+)
+```
+
+```{r}
+logit.cv <- train(
+  Loan ~ .,
+  data = train.df,
+  method = "glmnet",
+  family = "binomial",
+  trControl = fit.cntrl,
+  tuneGrid = lasso.search
+)
+
+logit.cv
+```
+
+---
+
+### Extracting coefficients from the tuned model
+
+```{r}
+coef(
+  logit.cv$finalModel,
+  logit.cv$bestTune$lambda
+)
+```
+
+Odds ratios:
+
+```{r}
+exp(
+  coef(
+    logit.cv$finalModel,
+    logit.cv$bestTune$lambda
+  )
+)
+```
+
+**Note:** Variables removed by LASSO have odds ratios equal to 1, indicating no effect.
+
+---
+
+### Student Exercise 2 — Regularization insight
+
+```{r}
+#| eval: false
+
+# Which variables were eliminated by the LASSO penalty?
+# Why might this be desirable in a business setting?
+```
+
+---
+
+## Test-set predictions (penalized model)
+
+```{r}
+logit.cv_results <- bind_cols(
+  predClass = predict(logit.cv, newdata = test.df),
+  predProb  = predict(logit.cv, newdata = test.df, type = "prob")$Yes,
+  Actual    = test.df$Loan,
+  model     = "logit.cv"
+)
+
+perf_results <- bind_rows(
+  logit.1_results,
+  logit.cv_results
+)
+```
+
+---
+
+## Model comparison: ROC, AUC, and lift
+
+### Area under the curve (AUC)
+
+```{r}
+perf_results %>% 
+  group_by(model) %>% 
+  roc_auc(Actual, predProb)
+```
+
+### ROC curves
+
+```{r}
+perf_results %>% 
+  group_by(model) %>% 
+  roc_curve(Actual, predProb) %>% 
+  autoplot()
+```
+
+### Lift curves
+
+```{r}
+perf_results %>% 
+  group_by(model) %>% 
+  lift_curve(Actual, predProb) %>% 
+  autoplot()
+```
+
+---
+
+###  Student Exercise 3 — Model evaluation
+
+```{r}
+#| eval: false
+
+# Compare the baseline and penalized models.
+# Which performs better on AUC?
+# Does the penalized model sacrifice much predictive power?
+```
+
+---
+
+## Wrap-up
+
+* Penalized logistic regression reduces overfitting
+* Cross-validation selects the appropriate penalty strength
+* LASSO performs implicit feature selection
+* Performance tradeoffs can be evaluated using ROC and lift curves
+
+This framework generalizes directly to **elastic net**, **SVMs**, and **tree-based models** in later chapters.
+
+

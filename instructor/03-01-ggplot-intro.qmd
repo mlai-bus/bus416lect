@@ -1,0 +1,385 @@
+---
+title: "03-01-ggplot-intro"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The **grammar of graphics**, introduced by Hadley Wickham, provides a structured way to think about plots.
+
+Instead of asking *“What type of chart do I want?”*, we ask:
+
+> What data do I have, and how should variables be mapped to visual elements?
+
+A plot is built from the following components:
+
+-   a **dataset** and **aesthetic mappings**
+-   one or more **layers**
+-   **scales** that control how data values appear
+-   a **coordinate system**
+-   optional **facets** for subplots
+
+The key idea is that plots are built **layer by layer**, allowing multiple visual elements to coexist on the same chart.
+
+A dataset consists of variables which need to be mapped to a graph. These mappings are called aesthetics. The actual observations are shown on the graph using the various geoms (for example, point, line, boxplot etc). These values may appear by themselves, or first undergo some statistical transformation and then get plotted. What sets this approach apart is that these mappings and geoms are built in a **layered fashion**, enabling one to add multiple visuals on the chart. Borrowing the term from Tufte, this allows for plotting of multiple dimensions on a single two dimensional chart.
+
+These geoms can in turn be customized by size, shape, transparency, color etc.
+
+The scales of the axis can be adjusted as well (log transforms for example), without transforming the underlying data. The co-ordinate systems can also be changed between the traditional Cartesian or polar.
+
+Finally, instead of representing all the groups in a single graph, a separate graph can be plotted for each group. This is called faceting. The layered construction of plots also allows for the addition of labels, text annotations, lines etc on to the graph. We will explore all these elements next.
+
+```{r echo=FALSE}
+library(tidyverse)
+```
+
+------------------------------------------------------------------------
+
+## Dataset
+
+We will use the built-in `mpg` dataset, which contains fuel economy data for cars.
+
+```{r}
+df <- as_tibble(mpg)
+str(df)
+```
+
+Before plotting, always inspect:
+
+-   variable names
+-   variable types
+-   units of measurement
+
+This helps avoid misinterpretation later.
+
+------------------------------------------------------------------------
+
+## Initializing a plot
+
+The `ggplot()` function initializes a plot.
+
+At this stage:
+
+-   we **define the data**
+-   we **map variables to aesthetics**
+-   but **nothing is drawn yet**
+
+```{r}
+g1 <- df |> 
+  ggplot(aes(x = displ, y = hwy))
+
+g1
+```
+
+Think of this as creating a **canvas** with axes, but no data points.
+
+------------------------------------------------------------------------
+
+### Student exercise: initializing a plot
+
+```{r}
+#| eval: false
+# Initialize a ggplot object mapping:
+# x = displ
+# y = cty
+# Save it as g_init
+```
+
+------------------------------------------------------------------------
+
+## Adding data with geoms
+
+Geometric objects (**geoms**) control *how* data appears.
+
+The most common geom for continuous variables is `geom_point()`.
+
+```{r}
+df |> 
+  ggplot(aes(x = displ, y = hwy, color = class)) +
+  geom_point()
+```
+
+Here:
+
+-   `displ` → x-axis
+-   `hwy` → y-axis
+-   `class` → color
+
+------------------------------------------------------------------------
+
+## Layered plotting
+
+Instead of rewriting the plot, we can **add layers**.
+
+```{r}
+g1 +
+  geom_point(size = 3)
+```
+
+This approach encourages:
+
+-   reuse
+-   experimentation
+-   incremental refinement
+
+------------------------------------------------------------------------
+
+### Student exercise: points
+
+```{r}
+#| eval: false
+# Add a point layer to g1
+# Set point size to 2
+```
+
+------------------------------------------------------------------------
+
+## Adding statistical layers
+
+We can overlay summaries or models on top of raw data.
+
+```{r}
+g1 +
+  geom_point() +
+  geom_smooth(se = FALSE)
+```
+
+This adds a smoothed trend without modifying the underlying data.
+
+Switching to a linear regression:
+
+```{r}
+g1 +
+  geom_point(aes(color = class)) +
+  geom_smooth(method = "lm", se = FALSE)
+```
+
+------------------------------------------------------------------------
+
+### Student exercise: regression line
+
+```{r}
+#| eval: false
+# Add a linear regression line to g1
+# Turn off the confidence interval
+```
+
+------------------------------------------------------------------------
+
+## Aesthetic inheritance and overrides
+
+Aesthetics defined in `ggplot()` are **inherited** by all layers.
+
+However, individual layers can:
+
+-   add new aesthetics
+-   override existing ones
+
+```{r}
+g1 +
+  geom_point(aes(color = class, shape = drv)) +
+  geom_smooth(method = "lm", se = FALSE, aes(color = drv))
+```
+
+Here:
+
+-   points are grouped by **class**
+-   regression lines are grouped by **drive type**
+
+------------------------------------------------------------------------
+
+### Student exercise: aesthetics
+
+```{r}
+#| eval: false
+# Map:
+# color = drv
+# shape = drv
+# Add both points and regression lines
+```
+
+------------------------------------------------------------------------
+
+## Scales
+
+Scales control **how data values are translated into visual space**.
+
+We can adjust tick marks without changing the data.
+
+```{r}
+g1 +
+  geom_point(aes(color = drv, shape = drv)) +
+  geom_smooth(method = "lm", se = FALSE, aes(color = drv)) +
+  scale_y_continuous(breaks = seq(0, 50, 5))
+```
+
+------------------------------------------------------------------------
+
+### Student exercise: axis scales
+
+```{r}
+#| eval: false
+# Modify the y-axis to show ticks every 10 units
+```
+
+------------------------------------------------------------------------
+
+## Faceting
+
+Faceting creates **small multiples**, allowing comparisons across groups.
+
+```{r}
+g1 +
+  geom_point(aes(color = drv, shape = drv)) +
+  facet_wrap(vars(class))
+```
+
+We can control layout and scaling.
+
+```{r}
+g1 +
+  geom_point(aes(color = drv, shape = drv)) +
+  facet_wrap(vars(class), ncol = 2)
+```
+
+```{r}
+g1 +
+  geom_point(aes(color = drv, shape = drv)) +
+  facet_wrap(vars(class), scales = "free")
+```
+
+------------------------------------------------------------------------
+
+### Student exercise: facets
+
+```{r}
+#| eval: false
+# Create faceted plots by class
+# Allow each facet to have its own y-axis scale
+```
+
+------------------------------------------------------------------------
+
+## Labels
+
+Labels provide **context**, not decoration.
+
+```{r}
+g1 +
+  geom_point(aes(color = drv, shape = drv)) +
+  facet_wrap(vars(class)) +
+  labs(
+    title = "Miles per Gallon vs Engine Displacement",
+    subtitle = "Separated by Vehicle Class",
+    caption = "Source: mpg dataset (tidyverse)",
+    x = "Engine Displacement",
+    y = "Highway Miles per Gallon"
+  )
+```
+
+------------------------------------------------------------------------
+
+### Student exercise: labeling
+
+```{r}
+#| eval: false
+# Add:
+# title
+# x-axis label
+# y-axis label
+```
+
+------------------------------------------------------------------------
+
+## Themes
+
+Themes control **non-data ink** (backgrounds, grids, fonts).
+
+```{r}
+g1 +
+  geom_point(aes(color = drv, shape = drv)) +
+  facet_wrap(vars(class)) +
+  theme_minimal()
+```
+
+```{r}
+library(ggthemes)
+
+g1 +
+  geom_point(aes(color = drv, shape = drv)) +
+  facet_wrap(vars(class)) +
+  theme_economist()
+```
+
+------------------------------------------------------------------------
+
+## Univariate and alternative plots
+
+```{r}
+g2 <- df |> 
+  ggplot(aes(x = hwy)) +
+  geom_density() +
+  labs(title = "Distribution of Highway MPG")
+
+g2
+```
+
+```{r}
+g3 <- df |> 
+  ggplot(aes(x = class)) +
+  geom_bar() +
+  labs(title = "Number of Cars by Class")
+
+g3
+```
+
+```{r}
+g5 <- df |> 
+  ggplot(aes(x = cyl, y = hwy, color = drv)) +
+  geom_point() +
+  geom_jitter() +
+  labs(title = "Highway MPG vs Cylinders")
+
+g5
+```
+
+Jittering helps reduce overplotting when many points share the same value.
+
+------------------------------------------------------------------------
+
+### Student exercise: alternative plots
+
+```{r}
+#| eval: false
+# Create:
+# 1. A bar chart of drv
+# 2. A density plot of cty
+```
+
+------------------------------------------------------------------------
+
+## Combining plots
+
+Multiple plots can be combined using `patchwork`.
+
+```{r}
+library(patchwork)
+
+(g2 + g3) / g5
+```
+
+This is useful for dashboards and comparative storytelling.
+
+------------------------------------------------------------------------
+
+## Key takeaways
+
+-   `ggplot()` defines **structure**
+-   geoms define **representation**
+-   aesthetics define **mappings**
+-   layers allow **incremental complexity**
+-   plots should tell a **clear story**

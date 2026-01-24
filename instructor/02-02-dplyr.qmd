@@ -1,0 +1,268 @@
+
+---
+title: "02-02-datatransf"
+output: html_document
+---
+
+## Intro to `tidyverse()` and `dplyr()`
+
+`dplyr()` is a very powerful data management and transformation package which works upon *tidy data* with the following set of verbs and functions:
+
+-   Pick observations by their values (`filter()`).
+-   Reorder the rows (`arrange()`).
+-   Pick variables by their names (`select()`).
+-   Create new variables with functions of existing variables (`mutate()`).
+-   Collapse many values down to a single summary (`summarise()`).
+
+These can all be used in conjunction with `group_by()` which changes the scope of each function from operating on the entire dataset to operating on it group-by-group.
+
+## Basic data operations with `dplyr()`
+
+We will work with the full gapminder data.
+
+```{r}
+library(tidyverse)
+library(gapminder)
+
+life_expt <- as_tibble(gapminder)
+
+head(life_expt)
+glimpse(life_expt)
+str(life_expt)
+skim(life_expt)
+```
+
+---
+
+## Pick observations based on row values — `filter()`
+
+```{r}
+filter(life_expt, year == 2002, continent == "Asia")
+
+filter(life_expt, year %in% c(1997, 2002, 2007), continent == "Asia")
+```
+
+```{r}
+life_expt |> 
+  filter(year == 2002,
+         continent %in% c("Asia", "Africa"))
+```
+
+### Student exercise: `filter()`
+
+```{r}
+#| eval: false
+# Filter life_expt to:
+# year == 2007
+# continent is either Europe or Americas
+```
+
+---
+
+## Reorder rows — `arrange()`
+
+```{r}
+arrange(life_expt, -gdpPercap)
+```
+
+```{r}
+life_expt |> 
+  filter(year == 2007, 
+         continent %in% c("Asia", "Africa")) |> 
+  arrange(continent, desc(lifeExp))
+```
+
+### Student exercise: `arrange()`
+
+```{r}
+#| eval: false
+# Starting from life_expt:
+# Filter to year == 2007
+# Arrange by lifeExp from highest to lowest
+```
+
+---
+
+## Pipes (`|>`) as a workflow tool
+
+```{r}
+16 |> sqrt()
+16 |> sqrt() |> log2()
+```
+
+The pipe sends the result of the left-hand side to the **first argument** of the function on the right.
+
+---
+
+## Select columns — `select()` {#select}
+
+```{r}
+select(life_expt, country, year, lifeExp)
+
+select(life_expt, country:lifeExp)
+```
+
+```{r}
+iris_df <- iris
+
+iris_df |> 
+  select(starts_with("Sep")) |> 
+  names()
+```
+
+### Student exercise: `select()`
+
+```{r}
+#| eval: false
+# Using life_expt:
+# Select only country, continent, and gdpPercap
+```
+
+---
+
+## Rename variables — `rename()`
+
+```{r}
+life_expt |> 
+  rename(gdpPerCapita = gdpPercap,
+         population = pop) |> 
+  summarise(meanpop = mean(population),
+            medgdppc = median(gdpPerCapita))
+```
+
+---
+
+## Add new variables — `mutate()`
+
+```{r}
+life_expt |> 
+  mutate(nomGdp = pop * gdpPercap)
+```
+
+```{r}
+life_expt2 <- life_expt |>  
+  mutate(
+    nomGdp = pop * gdpPercap,
+    ln_pop = log(pop)
+  ) |> 
+  select(-pop, -gdpPercap)
+
+head(life_expt2)
+```
+
+### Student exercise: `mutate()`
+
+```{r}
+#| eval: false
+# Using life_expt:
+# Create a new variable gdp_total = pop * gdpPercap
+# Keep only country, year, and gdp_total
+```
+
+---
+
+## Grouping data — `group_by()` and `top_n()`
+
+```{r}
+life_expt |> 
+  filter(year == 2007) |> 
+  group_by(continent) |> 
+  top_n(2, lifeExp) |> 
+  arrange(continent, -lifeExp)
+```
+
+### Student exercise: grouping
+
+```{r}
+#| eval: false
+# For year 2007:
+# Find the top 3 countries by life expectancy in each continent
+```
+
+---
+
+## Collapse data — `summarise()`
+
+```{r}
+life_expt |> 
+  group_by(continent) |> 
+  summarise(avLE = mean(lifeExp))
+```
+
+```{r}
+life_expt |>  
+  group_by(continent, year) |>  
+  summarise(meanLifeExp = mean(lifeExp, na.rm = TRUE),
+            medianLifeExp = median(lifeExp, na.rm = TRUE),
+            sdLifeExp = sd(lifeExp, na.rm = TRUE))
+```
+
+### Student exercise: `summarise()`
+
+```{r}
+#| eval: false
+# Group life_expt by continent
+# Compute mean and median life expectancy
+```
+
+---
+
+## Another data management application
+
+```{r}
+library(mosaicData)
+
+housing_df <- as_tibble(SaratogaHouses)
+glimpse(housing_df)
+```
+
+```{r}
+housing_df2 <- housing_df |>  
+  mutate(pricePerSqF = price / livingArea)
+```
+
+```{r}
+housing_df3 <- housing_df2 |> 
+  mutate(
+    size = case_when(
+      livingArea <= 1100 ~ "small",
+      livingArea <= 2500 ~ "medium",
+      .default = "large"
+    )
+  ) |> 
+  mutate(size = factor(size, levels = c("small", "medium", "large")))
+```
+
+```{r}
+housing_df3 |> 
+  group_by(size, newConstruction) |>  
+  summarise(median_price = median(price),
+            avg_livingArea = mean(livingArea, na.rm = TRUE))
+```
+
+---
+
+## Student exercises: cumulative `dplyr` practice
+
+```{r}
+#| eval: false
+# Using housing_df:
+# Filter to waterfront == "Yes"
+# Compute the average price
+```
+
+```{r}
+#| eval: false
+# Using housing_df:
+# Group by waterfront
+# Report median price and average livingArea
+```
+
+```{r}
+#| eval: false
+# Using life_expt:
+# Group by continent and year
+# Compute mean life expectancy
+```
+
+

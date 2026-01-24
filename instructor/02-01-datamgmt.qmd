@@ -1,70 +1,58 @@
-
 ---
 title: "02-01-datamgt"
 output: html_document
 editor_options: 
   chunk_output_type: console
 ---
-```
 
 # Creating and importing data
 
 Let's look at a couple of ways of creating a small dataset. First, we will generate a matrix and cast it into a tibble. Then we will create a dataset of variables of different type.
 
----
-
 ## Creating a toy dataset
 
-First, load the required libraries.
+First, load the required libraries
 
 ```{r echo=FALSE}
 library(tidyverse)
 ```
 
----
-
-### Creating a tibble directly
+### Creating tibbles directly
 
 ```{r}
-mydata1 <- tibble(
-  one   = 1:10,
-  two   = 11:20,
-  three = 21:30
-)
-
+mydata1 <- tibble(one = 1:10, two = 11:20, three = 21:30)
 str(mydata1)
 ```
-
----
 
 ### Creating a tibble from a matrix
 
 ```{r}
 mydata2 <- as_tibble(matrix(1:30, ncol = 3))
 names(mydata2) <- c("one", "two", "three")
+```
 
+```{r}
 nstr <- names(mydata2)
 nstr
+```
 
+```{r}
+str(mydata1)
 str(mydata2)
 ```
 
----
-
-### Traditional data frame creation
+### Traditional data.frame approaches
 
 ```{r}
-# The traditional way
-mydata1b <- data.frame(
-  one = 1:10,
-  two = 11:20,
-  three = 21:30
-)
+mydata1b <- data.frame(one = 1:10, two = 11:20, three = 21:30)
+```
 
-# Converting a matrix into a data frame
+```{r}
 mydata2b <- as.data.frame(matrix(1:30, ncol = 3))
 names(mydata2b) <- c("one", "two", "three")
+```
 
+```{r}
 str(mydata1b)
 str(mydata2b)
 ```
@@ -73,29 +61,27 @@ str(mydata2b)
 rm(mydata2, mydata1b, mydata2b)
 ```
 
----
-
-### Student practice: creating a tibble
-
-```{r exercise-create_tibble}
-#| eval: false
-# Create a tibble with three numeric columns
-mydata_practice <- tibble(
-  ___ = ___,
-  ___ = ___,
-  ___ = ___
-)
-
-str(mydata_practice)
+```{r}
+# empty chunk preserved intentionally
 ```
 
----
+### Student exercise: creating a tibble
 
-## Importing data from Excel and CSV
+```{r}
+#| eval: false
+# Create a tibble called mydata_ex with three columns:
+# one = 1:5
+# two = 6:10
+# three = 11:15
+#
+# Then inspect its structure using str()
+```
 
-There are two packages that we will use to import data. `readr` is used to import CSV files and `readxl` is used to read Excel files. Though the preference is to use the `.csv` format.
+## importing data from excel and csv
 
-Also, note that the data file is stored in a separate folder, `/data` within the project folder. This is good practice as it separates code from data. Some large projects may involve setting up two folders: `/data_raw` and `/data_clean`.
+There are two packages that we will use to import data. `readr` package is used to import csv files and `readxl` is used to read excel files. Though the preference is to use the .csv format. Also, note that the data file is stored in a separate folder, /data within the project folder. This is good practice as it separates out code from data. Some large project may involve setting up two folders: /data_raw and /data_clean.
+
+### Loading libraries for data import
 
 ```{r}
 library(readr)
@@ -104,52 +90,55 @@ library(skimr)
 library(mlbadata)
 ```
 
----
-
 ### Reading CSV files
 
 ```{r}
-# Pressing tab inside quotes will pull up the list of files
 roxbury_tb <- read_csv("data/WestRoxbury.csv")
 roxbury_df <- read.csv("data/WestRoxbury.csv")
 ```
-
----
 
 ### Inspecting imported data
 
 ```{r}
 skim(roxbury_df)
+```
 
+```{r}
 roxbury_tb
+```
 
+```{r}
 skim(roxbury_tb)
+```
+
+```{r}
 glimpse(roxbury_tb)
 glimpse(roxbury_df)
 ```
-
----
 
 ### Creating new variables
 
 ```{r}
 roxbury_tb$extra_area <- roxbury_tb$`GROSS AREA` - roxbury_tb$`LIVING AREA`
-extra_area2 <- roxbury_tb$`GROSS AREA` - roxbury_tb$`LIVING AREA`
 ```
 
----
+```{r}
+extra_area2 <- roxbury_tb$`GROSS AREA` - roxbury_tb$`LIVING AREA`
+```
 
 ### Exporting data
 
 ```{r}
-# Export to CSV
 write_csv(roxbury_tb, "data/new_roxbury.csv")
+```
 
-# Save as RDS (native R format)
+```{r}
 write_rds(roxbury_tb, "data/roxbury.rds")
 ```
 
----
+```{r}
+#roxbury.new <- read_rds("data/roxbury.rds")
+```
 
 ### Reading Excel files
 
@@ -157,167 +146,185 @@ write_rds(roxbury_tb, "data/roxbury.rds")
 housing.data <- read_excel("data/BostonHousing.xlsx")
 ```
 
----
+**Note:** The above method of reading csvs `read_csv()`, works well when you have external data files, ideally, in the same project. Then, put `""` marks in the parenthesis and press `tab`. R will open up the existing file and folders in the current project directory and you can choose the appropriate data file.
 
-## Loading data from an R package
+However, in general, all the datasets used in this course are contained in the `mlbdadata` library which I have already loaded in the environment. Datasets within this library (or any other `R` library, can be easily loaded using the following command:
 
-In this course, most datasets are contained in the `mlbadata` library and can be loaded directly.
+### Loading packaged datasets
 
 ```{r}
 roxbury.df <- mlbadata::WestRoxbury
+```
 
+```{r}
 glimpse(roxbury.df)
 skim(roxbury.df)
 ```
 
----
+### Student exercise: reading packaged data
 
-## Accessing variables and basic operations
+```{r}
+#| eval: false
+# Load the WestRoxbury dataset from the mlbadata package
+# Assign it to an object called roxbury_ex
+# Then preview it using glimpse() or skim()
+```
 
-There are two common ways to access a variable:
+There are some important points to note in the `roxbury_tb` dataframe. Some variable names have spaces. The default command, `read.csv()` would have inserted `.` between the words, `TOTAL.VALUE`.
 
-* using the `$` accessor
-* using column references
+**Accessing a given variable from the data and doing some basic operations:**
 
-Each approach returns a different class of object, which affects what operations are possible.
+There are two common ways to access a variable, one with the $ accessor and one with a column reference. *Each will result in a different class of results and that has implications on what can be done with them*. To get the column names of a dataset, we can use `names()` function:
 
 ```{r}
 names(mydata1)[2:3]
 ```
 
----
+Let's pull out col 2.
 
-### Accessing columns using different methods
+### Accessing columns as vectors
 
 ```{r}
-# Using the $ accessor
 mydata1$two[1:5]
-mydata1[1:5, 2]
-mydata1[[2]]
+```
 
+```{r}
+mydata1[1:5 , 2]
+```
+
+```{r}
+mydata1[[2]]
+```
+
+```{r}
 str(mydata1$two)
 class(mydata1$two)
 ```
 
-The result is a vector, which allows direct mathematical operations.
+The result is a vector object, which is most flexible and permits direct mathematical operations. For example,
 
 ```{r}
 mean(mydata1$two)
-mean(mydata1[, 2])
-summary(mydata1[, 2])
 ```
 
----
-
-### Column references return tibbles
+```{r}
+mean(mydata1[,2])
+```
 
 ```{r}
-mydata1[, "two"]
-mydata1[c(3, 4, 8), c("one", "three")]
+summary(mydata1[,2])
+```
 
+### Accessing columns as data frames
+
+```{r}
+mydata1[ , "two"]
+```
+
+```{r}
+mydata1[c(3,4,8) , c("one", "three")]
+```
+
+```{r}
 class(mydata1[, "two"])
 str(mydata1[, "two"])
 ```
 
 ```{r}
-mydata1[, 2]
+mydata1[ , 2]
+```
+
+```{r}
 mydata1[[2]]
 ```
 
 ```{r}
-mydata1[1:5, c(1, 3)]
-class(mydata1[1:5, c(1, 3)])
+mydata1[1:5, c(1,3)]
 ```
 
----
-
-### Student practice: column access
-
-```{r exercise-column_access}
-#| eval: false
-# Extract a column and compute a summary statistic
-mean(mydata1$___)
+```{r}
+class(mydata1[1:5, c(1,3)])
 ```
 
----
+The structure of these objects still is dataframe (tibble). Standard math functions, like `mean()` do not work on datafames but on vectors. Try,
 
-## Matrices and summary functions
+`mean(d2)`
 
-Standard math functions work on vectors and matrices.
+The above function will work over a vector and even a martix and will give us the mean of the entire matrix.
+
+### Working with matrices
 
 ```{r}
 mymat <- matrix(1:30, nrow = 10)
 mymat
+```
 
+```{r}
 mean(mymat)
 max(mymat)
 median(mymat)
 ```
 
-We will learn later how to apply functions iteratively using **functional programming**.
+We will learn later on how to apply functions iteratively to elements of a list using a paradigm called `functional programming`.
 
----
+### Treatment of factor variables
 
-## Treatment of factor variables
-
-`REMODEL` has three values: `"Recent"`, `"None"`, and `"Old"`.
-We want to make this into a factor and control the order of the levels.
+`REMODEL` has three values, "recent, none and old". We want to make this into a factor variable and also make recent as the first level, followed by old and then none. The function `factor()` will make a column into a factor with the levels being sorted in alphabetical order. But here, we will specify our own levels.
 
 ```{r}
-roxbury_tb$REMODEL <- factor(
-  roxbury_tb$REMODEL,
-  levels = c("Recent", "Old", "None")
-)
+roxbury_tb$REMODEL <- factor(roxbury_tb$REMODEL,
+                         levels = c("Recent", "Old", "None"))
+```
 
+```{r}
 glimpse(roxbury_tb)
 str(roxbury_tb$REMODEL)
 ```
 
-We can change the level order as well.
+We can change the levels as well.
 
 ```{r}
-roxbury_tb$REMODEL <- factor(
-  roxbury_tb$REMODEL,
-  levels = c("None", "Recent", "Old")
-)
+roxbury_tb$REMODEL <- factor(roxbury_tb$REMODEL,
+                         levels = c("None", "Recent", "Old" ))
+```
 
+```{r}
 str(roxbury_tb$REMODEL)
 ```
 
-This will be useful in ML tasks where level ordering matters.
+### Student exercise: factor levels
 
----
-
-### Student practice: factor levels
-
-```{r exercise-factor_levels}
+```{r}
 #| eval: false
-# Reorder the levels of REMODEL
-roxbury_tb$REMODEL <- factor(
-  roxbury_tb$REMODEL,
-  levels = c(___, ___, ___)
-)
+# Recreate the REMODEL factor so that:
+# "Old" is the first level,
+# followed by "Recent",
+# and then "None"
+#
+# Inspect the result using str()
 ```
 
----
+This will be useful in ML tasks. Some algorithms will want the first level as outcome (if coded as 1,2) and some will want the second as the outcome of interest (expect data to be coded as 0,1).
 
-## Some basic tables and pivot tables
 
-`R` has several options for tabulating data or creating pivot tables.
 
----
+### Some basic tables and pivot tables
 
-### One-way tables
+`R` has several options of tabulating data or creating pivot tables.
+
+Let's start with a basic table showing how many homes with various number of homes.
 
 ```{r}
 table(roxbury_tb$ROOMS)
 ```
 
+Suppose we want to see the frequency of homes with each of these rooms. The function we will use is `prop.table()`, where the above table is input into this function.
+
 ```{r}
 prop.table(table(roxbury_tb$ROOMS))
 ```
 
-Using the pipe operator improves readability.
+The above code is very unwieldy. We are basically *piping* the table output into the new function. For this, we can use the `|>` operator (called the pipe operator). This operator will take whatever is preceding the pipe and put it as the *first* argument of the following function.
 
 ```{r}
 table(roxbury_tb$ROOMS) |> 
@@ -330,71 +337,58 @@ roxbury_tb$ROOMS |>
   prop.table()
 ```
 
----
+### Student exercise: one-way tables and proportions
 
-## Two-way tables
+```{r}
+#| eval: false
+# Create a frequency table for the variable FULL BATH
+# Then compute the proportional table using the pipe operator
+```
+
+Let's look at a two-way table. We want to see the number of baths for each remodel category.
 
 ```{r}
 table(roxbury_tb$REMODEL, roxbury_tb$`FULL BATH`)
 ```
 
+### Student exercise: two-way tables
+
+```{r}
+#| eval: false
+# Create a two-way table showing:
+# REMODEL by ROOMS
+```
+
+Now, let's obtain the proportional table for this new two-way table.
+
 ```{r}
 table(roxbury_tb$REMODEL, roxbury_tb$`FULL BATH`) |> 
   prop.table()
 ```
 
----
-
-### Row-wise proportions
+By default, frequency distribution is over the entire table. If we want to get this over rows, we can add the `margins = 1` argument.
 
 ```{r}
 table(roxbury_tb$REMODEL, roxbury_tb$`FULL BATH`) |> 
-  prop.table(margin = 1)
+  prop.table( margin = 1)
 ```
 
----
-
-### Column-wise proportions
+For column-wise frequency:
 
 ```{r}
 table(roxbury_tb$REMODEL, roxbury_tb$`FULL BATH`) |> 
-  prop.table(margin = 2)
+  prop.table( margin = 2)
 ```
 
----
+### Student exercise: row vs column proportions
 
-### Student practice: two-way tables
-
-```{r exercise-two_way_table}
+```{r}
 #| eval: false
-# Create a two-way table of remodel status and number of full baths
-table(roxbury_tb$___, roxbury_tb$___)
+# Using a two-way table of REMODEL and FULL BATH:
+# 1. Compute row-wise proportions
+# 2. Compute column-wise proportions
 ```
 
-```{r exercise-two_way_prop}
-#| eval: false
-# Convert the two-way table into proportions
-table(roxbury_tb$___, roxbury_tb$___) |>
-  prop.table()
-```
+We can also obtain Excel-like pivot tables with data presented as other summary stats like mean, median, sum etc by using the `dplyr` library, which is covered in the next section.
 
-```{r exercise-row_prop}
-#| eval: false
-# Compute row-wise proportions
-table(roxbury_tb$___, roxbury_tb$___) |>
-  prop.table(margin = ___)
-```
-
-```{r exercise-col_prop}
-#| eval: false
-# Compute column-wise proportions
-table(roxbury_tb$___, roxbury_tb$___) |>
-  prop.table(margin = ___)
-```
-
----
-
-We can also obtain Excel-like pivot tables using `dplyr`, which we will cover in the next section.
-
-```
 

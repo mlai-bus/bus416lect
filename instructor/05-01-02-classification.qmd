@@ -1,0 +1,309 @@
+---
+title: "05-02-classification"
+format: pdf
+editor: visual
+---
+
+## 5.2 Data Partitioning and Performance Evaluation for Categorical Outcomes
+
+### Learning objectives
+
+After completing this section, you should be able to:
+
+- Partition classification data while preserving class proportions
+- Explain why random sampling can fail under class imbalance
+- Construct and interpret confusion matrices
+- Analyze sensitivity–specificity tradeoffs using different cutoffs
+- Evaluate classifiers using ROC curves, AUC, and lift charts
+- Select evaluation metrics appropriate for business objectives
+
+---
+
+## Data partitioning for classification problems
+
+```{r}
+#| echo = false
+library(yardstick)
+library(tidyverse)
+library(caret)
+library(e1071)
+library(mlbadata)
+```
+
+In classification problems, **class imbalance** is common and dangerous.
+
+If one class is rare, naive random sampling may produce training or validation sets that:
+
+* severely underrepresent the target class, or
+* contain *no* examples of the target class
+
+To illustrate this, we will use a dataset with heavy class imbalance.
+
+---
+
+## Class imbalance example
+
+```{r}
+bank.df <- mlbadata::UniversalBank
+
+bank.df$Securities.Account <- factor(
+  bank.df$Securities.Account,
+  levels = c("1", "0"),
+  labels = c("Yes", "No")
+)
+
+bank.df %>% 
+  group_by(Securities.Account) %>% 
+  summarise(n = n()) %>% 
+  mutate(percent = n / sum(n))
+```
+
+Only about **10% of customers** have a securities account.
+This makes stratified partitioning essential.
+
+---
+
+## Stratified data partitioning with `caret`
+
+Unlike `sample()`, `createDataPartition()` preserves the **distribution of the outcome variable** across splits.
+
+Key requirements:
+
+1. The outcome must be a **factor**
+2. The outcome must be supplied via the `y =` argument
+
+```{r}
+trainIndex <- createDataPartition(
+  y = bank.df$Securities.Account,
+  p = 0.6,
+  list = FALSE
+)
+
+train.bank.df <- bank.df[trainIndex, ]
+valid.bank.df <- bank.df[-trainIndex, ]
+```
+
+### Training set distribution
+
+```{r}
+train.bank.df %>% 
+  group_by(Securities.Account) %>% 
+  summarise(n = n()) %>% 
+  mutate(percent = n / sum(n))
+```
+
+### Validation set distribution
+
+```{r}
+valid.bank.df %>% 
+  group_by(Securities.Account) %>% 
+  summarise(n = n()) %>% 
+  mutate(percent = n / sum(n))
+```
+
+### Interpretation
+
+Both datasets preserve the original class proportions.
+This is **critical** for meaningful model evaluation.
+
+---
+
+### Student check
+
+```{r}
+#| eval: false
+# Why would accuracy be misleading
+# if the validation set contained no "Yes" cases?
+```
+
+---
+
+## Evaluating classification performance
+
+### Confusion matrix
+
+In classification, predictions are often probabilities.
+To evaluate performance, we must:
+
+1. Choose a cutoff
+2. Convert probabilities into class labels
+3. Compare predictions against actual outcomes
+
+---
+
+## Confusion matrix example
+
+```{r}
+owner.df <- mlbadata::OwnerExample
+
+owner.df$Class <- factor(
+  owner.df$Class,
+  labels = c("nonowner", "owner")
+)
+```
+
+Using a cutoff of 0.5:
+
+```{r}
+confusionMatrix(
+  as.factor(ifelse(owner.df$Probability > 0.5, "owner", "nonowner")),
+  owner.df$Class
+)
+```
+
+---
+
+### ⚠️ Important: target class in `caret`
+
+In `caret`:
+
+* The **first factor level** is treated as the *positive (target) class*
+
+Here, `"nonowner"` is the first level — which is *not* what we want.
+
+---
+
+## Explicitly setting the target class
+
+```{r}
+confusionMatrix(
+  as.factor(ifelse(owner.df$Probability > 0.5, "owner", "nonowner")),
+  owner.df$Class,
+  positive = "owner"
+)
+```
+
+Alternatively, we can relevel the factor itself:
+
+```{r}
+owner.df$Class <- relevel(owner.df$Class, ref = "owner")
+
+confusionMatrix(
+  as.factor(ifelse(owner.df$Probability > 0.5, "owner", "nonowner")),
+  owner.df$Class
+)
+```
+
+---
+
+### Sensitivity vs specificity
+
+* **Sensitivity**: ability to detect the target class
+* **Specificity**: ability to detect the non-target class
+
+These move in **opposite directions** as the cutoff changes.
+
+---
+
+## Effect of changing the cutoff
+
+```{r}
+confusionMatrix(
+  as.factor(ifelse(owner.df$Probability > 0.25, "owner", "nonowner")),
+  owner.df$Class
+)
+
+confusionMatrix(
+  as.factor(ifelse(owner.df$Probability > 0.75, "owner", "nonowner")),
+  owner.df$Class
+)
+```
+
+### Interpretation
+
+* Lower cutoff → higher sensitivity, lower specificity
+* Higher cutoff → lower sensitivity, higher specificity
+
+---
+
+### Student exercise: decision tradeoff
+
+```{r}
+#| eval: false
+# Which cutoff would you choose if:
+# (a) false positives are costly?
+# (b) false negatives are costly?
+```
+
+---
+
+## ROC curves and AUC
+
+ROC curves summarize classifier performance across **all possible cutoffs**.
+
+```{r}
+library(pROC)
+
+r <- roc(owner.df$Class, owner.df$Probability)
+plot.roc(r)
+
+auc(r)
+```
+
+---
+
+### ROC using `yardstick`
+
+```{r}
+roc_1 <- owner.df %>% 
+  yardstick::roc_curve(Class, Probability)
+
+autoplot(roc_1)
+
+yardstick::roc_auc(owner.df, Class, Probability)
+```
+
+### Interpretation
+
+* AUC measures *ranking ability*
+* It is threshold-independent
+* It does **not** account for business costs
+
+---
+
+## Lift charts: business-oriented evaluation
+
+Many applications aim to identify a **subset of the population** most likely to belong to the target class.
+
+Lift charts answer:
+
+> *How much of the target class can we capture by contacting the top X%?*
+
+---
+
+### Cumulative lift chart
+
+```{r}
+lift_data <- caret::lift(Class ~ Probability, data = owner.df)
+
+ggplot(lift_data, values = 70)
+```
+
+This shows that:
+
+* ~38% of the population captures 70% of owners
+* Far better than random selection
+
+---
+
+### Decile lift chart
+
+```{r}
+lift1 <- yardstick::lift_curve(owner.df, Class, Probability)
+
+autoplot(lift1) +
+  scale_x_continuous(breaks = seq(0, 100, 10))
+```
+
+---
+
+## Key takeaways
+
+* Class imbalance requires stratified partitioning
+* Confusion matrices depend on cutoff choice
+* Sensitivity and specificity trade off against each other
+* ROC/AUC evaluate ranking, not decisions
+* Lift charts align evaluation with business objectives
+ 
+
+

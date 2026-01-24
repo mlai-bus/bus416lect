@@ -1,0 +1,256 @@
+---
+title: "ch05-01-preprocess"
+format: html
+editor: visual
+---
+
+## 5.1 Performance Evaluation of Continuous Outcomes
+
+### Learning objectives
+
+After completing this section, you should be able to:
+
+- Partition data into training and validation sets
+- Explain why model evaluation must be done on held-out data
+- Fit a regression model using a training dataset
+- Compute and interpret common regression accuracy metrics
+- Compare training vs validation performance to diagnose overfitting
+
+---
+
+## Data partitioning
+
+Before evaluating any model, we must separate **model fitting** from **model evaluation**.
+
+If we evaluate a model on the same data used to estimate it, performance will be overly optimistic.  
+To avoid this, we split the data into:
+
+- **Training set** → used to estimate model parameters  
+- **Validation set** → used to evaluate predictive performance  
+
+While base R’s `sample()` works, we will use tools from the `caret` package, which integrate naturally with later modeling workflows.
+
+```{r}
+#| echo: false
+library(tidyverse)
+library(caret)
+library(forecast)
+library(readr)
+library(broom)
+library(mlbadata)
+```
+
+---
+
+## Creating a training–validation split
+
+We will use the Boston Housing dataset to illustrate.
+
+```{r}
+boston.df <- mlbadata::BostonHousing
+
+# Rename for clarity
+boston.df <- boston.df |> 
+  rename(High.Medv = CAT.MEDV)
+```
+
+We now create a **60–40 split**.
+Setting a random seed ensures reproducibility.
+
+```{r}
+set.seed(12345)
+
+trainInd <- createDataPartition(
+  c(1:nrow(boston.df)),
+  p = 0.6,
+  list = FALSE
+)
+
+boston.tr <- boston.df[trainInd, ]
+boston.valid <- boston.df[-trainInd, ]
+
+nrow(boston.tr)
+nrow(boston.valid)
+```
+
+### Interpretation
+
+* The rows are randomly assigned
+* The training set contains ~60% of the data
+* The validation set is **never used during model fitting**
+
+---
+
+### Student exercise: partition logic
+
+```{r}
+#| eval: false
+# Verify that no rows appear in both
+# boston.tr and boston.valid
+```
+
+---
+
+## Evaluating the performance of regression models
+
+Once a model generates predictions, we must quantify **how close those predictions are to the actual values**.
+
+Let the prediction error be:
+
+[
+e_i = y_i - \hat{y}_i
+]
+
+Common accuracy measures include:
+
+* **Mean Error (ME)**
+  [
+  \frac{1}{n}\sum e_i
+  ]
+
+* **Root Mean Square Error (RMSE)**
+  [
+  \sqrt{\frac{1}{n}\sum e_i^2}
+  ]
+
+* **Mean Absolute Error (MAE)**
+  [
+  \frac{1}{n}\sum |e_i|
+  ]
+
+* **Mean Percentage Error (MPE)**
+  [
+  100 \times \frac{1}{n}\sum \frac{e_i}{y_i}
+  ]
+
+* **Mean Absolute Percentage Error (MAPE)**
+  [
+  100 \times \frac{1}{n}\sum \left|\frac{e_i}{y_i}\right|
+  ]
+
+Each metric emphasizes **different aspects of prediction error**.
+
+---
+
+## Fitting a regression model
+
+We estimate a regression model using the **training data only**.
+
+```{r}
+model.1 <- lm(
+  MEDV ~ .,
+  data = boston.tr[, c(1, 4, 6, 13)],
+  na.action = na.omit
+)
+```
+
+```{r}
+# Coefficient estimates
+tidy(model.1)
+
+# Model fit statistics
+glance(model.1)
+```
+
+---
+
+## Generating predictions
+
+We now generate predictions for both datasets:
+
+```{r}
+medv_tr <- predict(model.1, na.action = na.omit)
+
+medv_val <- predict(
+  model.1,
+  newdata = boston.valid,
+  na.action = na.omit
+)
+```
+
+### Important distinction
+
+* `medv_tr` → **in-sample predictions**
+* `medv_val` → **out-of-sample predictions**
+
+---
+
+### Student exercise: prediction intuition
+
+```{r}
+#| eval: false
+# Which set (training or validation)
+# would you expect to have larger errors?
+# Why?
+```
+
+---
+
+## Computing prediction accuracy
+
+The `forecast::accuracy()` function computes several error metrics at once.
+
+The first argument is the **predicted value**,
+the second argument is the **actual value**.
+
+```{r}
+perf_train <- data.frame(
+  accuracy(medv_tr, boston.tr$MEDV)
+)
+
+perf_valid <- data.frame(
+  accuracy(medv_val, boston.valid$MEDV)
+)
+```
+
+We combine the results for easy comparison.
+
+```{r}
+rbind(
+  training = perf_train,
+  validation = perf_valid
+)
+```
+
+### Interpretation
+
+* Training error is typically lower
+* Validation error reflects **generalization performance**
+* Large gaps may indicate **overfitting**
+
+---
+
+### Student exercise: metric comparison
+
+```{r}
+#| eval: false
+# Compare RMSE and MAE for training vs validation.
+# What do these differences suggest about model fit?
+```
+
+---
+
+## Why this matters
+
+When comparing multiple models, collecting performance metrics in a single table allows us to:
+
+* rank models by predictive accuracy
+* detect overfitting
+* select models that generalize well
+
+This framework becomes especially powerful once we:
+
+* tune models
+* compare different algorithms
+* introduce cross-validation
+
+---
+
+## Key takeaways
+
+* Model evaluation must use **held-out data**
+* Training performance alone is misleading
+* Different metrics emphasize different errors
+* Validation error approximates real-world performance
+* This workflow is foundational for all supervised learning
+

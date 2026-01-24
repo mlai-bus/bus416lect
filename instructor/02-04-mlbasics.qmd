@@ -1,0 +1,302 @@
+---
+title: "02-04-mlbasics"
+format: html
+editor: visual
+---
+
+## Basics of setting up the data for ML
+
+### Set up the libraries
+
+```{r}
+#| echo: true
+#| output: false
+#| 
+library(tidyverse)
+library(readr)
+
+library(caret)
+library(mlbadata)
+library(fastDummies)
+library(broom)
+```
+
+------------------------------------------------------------------------
+
+## Import the dataset
+
+``` {r}        
+housing_df <- mlbadata::WestRoxbury
+str(housing_df)
+```
+
+### Inspect variable names
+
+``` {r}          
+names(housing_df)
+```
+
+``` {r}          
+t(t(names(housing_df)))
+```
+
+------------------------------------------------------------------------
+
+## Creating factor and dummy variables
+
+The `REMODEL` column is a character variable. We can convert it to a factor variable.
+
+``` {r}          
+housing_df$REMODEL <- factor(
+  housing_df$REMODEL,
+  levels = c("None", "Recent", "Old")
+)
+```
+
+```{r}           
+str(housing_df)
+```
+
+### Student exercise: factor variables
+
+```{r}           
+#| eval: false
+# Convert the column REMODEL to a factor
+# Set the levels in the order:
+# None, Recent, Old
+# Inspect the structure afterward
+```
+
+------------------------------------------------------------------------
+
+## Creating dummy variables (one-hot encoding)
+
+Several algorithms require converting factor variables into indicator columns.\
+We use `dummy_columns()` from the **fastDummies** package.
+
+``` {r}          
+args(dummy_columns)
+```
+
+The key arguments are:
+
+-   remove_selected_columns
+
+-   remove_first_dummy
+
+-   remove_most_frequent_dummy
+
+### One-hot encoding (keep all categories)
+
+``` {r}          
+housing_df1 <- housing_df |> 
+  dummy_columns(remove_selected_columns = TRUE)
+```
+
+``` {r}          
+str(housing_df1)
+```
+
+### Avoiding the dummy variable trap
+
+In regression models, we must drop one category.
+
+``` {r}          
+housing_df2 <- housing_df |> 
+  dummy_columns(
+    remove_selected_columns = TRUE,
+    remove_first_dummy = TRUE
+  )
+```
+
+``` {r}          
+str(housing_df2)
+```
+
+### Student exercise: dummy variables
+
+``` {r}          
+#| eval: false
+# Create dummy variables for housing_df
+# Remove the original factor columns
+# Remove the first dummy to avoid multicollinearity
+```
+
+---
+## Data partitioning: training and test sets
+
+We will create an 80–20 split using **caret**.
+
+``` {r}          
+set.seed(1234)
+
+trainind <- createDataPartition(
+  housing_df$TOTAL.VALUE,
+  p = 0.8,
+  list = FALSE
+)
+```
+
+``` {r}          
+train_df <- housing_df2[trainind, ]
+test_df  <- housing_df2[-trainind, ]
+```
+
+The training set will be used to build the model and the test set to evaluate performance.
+
+### Student exercise: partitioning
+
+``` {r}          
+#| eval: false
+# Use createDataPartition() to:
+# Split the data into 75% training and 25% testing
+# Use TOTAL.VALUE as the outcome variable
+```
+
+------------------------------------------------------------------------
+
+## Basic multiple regression
+
+We use the formula interface:
+
+``` {r}          
+outcome ~ predictors
+```
+
+``` {r}          
+reg1 <- lm(
+  TOTAL.VALUE ~ LOT.SQFT + LIVING.AREA,
+  data = housing_df2
+)
+```
+
+```{r}           
+summary(reg1)
+```
+
+``` {r}          
+tidy(reg1)
+```
+
+Fit statistics can be obtained using `glance()`.
+
+```{r}           
+reg1 |> glance()
+```
+
+---
+## Interaction effects
+
+```  {r}         
+reg2 <- lm(
+  TOTAL.VALUE ~ LOT.SQFT * LIVING.AREA,
+  data = housing_df2
+)
+```
+
+Let's view the results:
+
+``` {r}          
+reg2 |> tidy()
+```
+
+``` {r}          
+reg2 |> glance()
+```
+
+If we want **only** the interaction term:
+
+``` {r}          
+lm(
+  TOTAL.VALUE ~ LOT.SQFT:LIVING.AREA,
+  data = housing_df2
+) |> tidy()
+```
+
+### Student exercise: interactions
+
+```  {r}         
+#| eval: false
+# Fit a regression with:
+# TOTAL.VALUE as outcome
+# LOT.SQFT, LIVING.AREA, and their interaction
+# Inspect the coefficients
+```
+
+---
+## Including and excluding predictors
+
+Using `.` includes all predictors.
+
+``` {r}          
+lm(
+  TOTAL.VALUE ~ . -YR.BUILT -TAX,
+  data = housing_df2
+) |> tidy()
+```
+
+------------------------------------------------------------------------
+
+## Fitting a model on training data
+
+``` {r}          
+reg3 <- lm(
+  TOTAL.VALUE ~ . -YR.BUILT -TAX,
+  data = train_df
+)
+```
+
+The model object contains:
+
+-   coefficients
+
+-   fitted values
+
+-   residuals
+
+We can attach these to the dataset using `augment()`.
+
+``` {r}          
+train_predict <- augment(reg3)
+```
+
+``` {r}          
+train_predict |> 
+  select(TOTAL.VALUE, .fitted, .resid)
+```
+
+---
+## Predicting on test data
+
+### Option 1: `predict()`
+
+``` {r}          
+test_pred <- predict(reg3, newdata = test_df)
+head(test_pred)
+```
+
+### Option 2: `augment()`
+
+``` {r}          
+test_pred2 <- augment(reg3, newdata = test_df)
+str(test_pred2)
+```
+
+---
+## Student exercises: ML workflow practice
+
+```   {r}        
+#| eval: false
+# Fit a regression model using train_df
+# Predict TOTAL.VALUE on test_df
+# Compare predicted vs actual values
+```
+
+``` {r}          
+#| eval: false
+# Using reg3:
+# Extract fitted values and residuals
+# Create a small dataframe with:
+# actual value, fitted value, residual
+```
+

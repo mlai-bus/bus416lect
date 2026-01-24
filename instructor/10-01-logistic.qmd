@@ -1,0 +1,298 @@
+---
+title: "10-01 Logistic Regression"
+format: html
+editor: visual
+error: true
+echo: true
+---
+
+## Learning objectives
+
+After completing this module, students should be able to:
+
+- Explain why linear regression is inappropriate for classification
+- Interpret logistic regression coefficients as log-odds and odds ratios
+- Fit logistic regression models using `glm()`
+- Generate predicted probabilities from a logistic model
+- Understand how probability cutoffs relate to classification decisions
+
+---
+
+## Ch 10: Logistic Regression
+
+Classification refers to assigning a success or failure class (in the case of binary outcomes) to an observation. This class assignment is based on generating a probability of the outcome for that case and then classifying the record using a probability cutoff value.
+
+Since we need to generate probabilities, we cannot use traditional ordinary least squares regression: there is nothing in OLS that restricts predictions to lie between 0 and 1. Logistic regression addresses this issue by modeling probabilities through a nonlinear response function.
+
+This file introduces logistic regression using the base R `glm()` syntax.
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(caret)
+library(yardstick)
+library(broom)
+library(mlbadata)
+````
+
+---
+
+## Why linear regression fails for classification
+
+Let us first model the acceptance of a personal loan as a function of income.
+
+Let
+
+* ( p ) = probability of accepting a personal loan
+
+A linear probability model is given by:
+
+[
+p = \beta_0 + \beta_1 \cdot income
+]
+
+The **logistic response function** is:
+
+[
+p = \frac{1}{1 + \exp^{-(\beta_0 + \beta_1 \cdot income)}}
+]
+
+We will estimate both models and visualize the difference.
+
+---
+
+## Toy example: linear vs logistic fit
+
+### Data setup
+
+```{r}
+toy.df <- mlbadata::UniversalBank[, c(4, 10)]
+
+toy.df$Class <- factor(
+  toy.df$Personal.Loan,
+  levels = c(0, 1),
+  labels = c("No", "Yes")
+)
+
+glimpse(toy.df)
+```
+
+### Linear regression (incorrect model)
+
+```{r}
+reg.1 <- lm(Personal.Loan ~ Income, data = toy.df)
+tidy(reg.1)
+```
+
+### Logistic regression (correct model)
+
+```{r}
+logit.1 <- glm(Class ~ Income, family = "binomial", data = toy.df)
+tidy(logit.1)
+```
+
+---
+
+## Comparing fitted curves
+
+```{r}
+lin.mod <- function(x) {
+  reg.1$coefficients[1] + reg.1$coefficients[2] * x
+}
+
+logit.mod <- function(x) {
+  1 / (1 + exp(-(logit.1$coefficients[1] + logit.1$coefficients[2] * x)))
+}
+
+toy.df %>% 
+  ggplot(aes(x = Income, y = Personal.Loan)) +
+  geom_jitter(width = 0.01, height = 0.02, alpha = 0.1) +
+  geom_function(fun = lin.mod, color = "blue") +
+  geom_function(fun = logit.mod, color = "red") +
+  labs(
+    x = "Income (in $000s)",
+    y = "Personal Loan"
+  )
+```
+
+---
+
+### 🧠 Student Exercise 1 — Conceptual check
+
+```{r}
+#| eval: false
+
+# Why is the blue (linear) curve problematic as a probability model?
+# List two concrete issues visible in the plot.
+```
+
+---
+
+## Logistic regression: general form
+
+In general, the logistic response function is:
+
+[
+p = \frac{1}{1 + \exp^{-(\beta_0 + \beta_1 x_1 + \dots + \beta_K x_K)}}
+]
+
+Define the **odds of success** as:
+
+[
+Odds(Y = 1) = \frac{p}{1 - p}
+]
+
+Taking logs:
+
+[
+\log(odds) = \beta_0 + \beta_1 x_1 + \dots + \beta_K x_K
+]
+
+This log-odds formulation is what `glm()` estimates when `family = "binomial"`.
+
+---
+
+## Full logistic regression model
+
+### Data preparation
+
+```{r}
+bank.df <- mlbadata::UniversalBank
+bank.df <- bank.df[, -c(1, 5)]  # Drop ID and ZIP code
+
+bank.df$Education <- factor(
+  bank.df$Education,
+  levels = c(1, 2, 3),
+  labels = c("Undergrad", "Grad", "Adv/Prof")
+)
+
+bank.df$Personal.Loan <- factor(
+  bank.df$Personal.Loan,
+  levels = c(0, 1),
+  labels = c("No", "Yes")
+)
+
+glimpse(bank.df)
+```
+
+### Train–validation split
+
+```{r}
+set.seed(1111)
+
+train.index <- createDataPartition(
+  bank.df$Personal.Loan,
+  p = 0.8,
+  list = FALSE
+)
+
+train.df <- bank.df[train.index, ]
+valid.df <- bank.df[-train.index, ]
+```
+
+---
+
+## Estimating the logistic regression
+
+```{r}
+logit.reg <- glm(
+  Personal.Loan ~ .,
+  data = train.df,
+  family = "binomial"
+)
+
+summary(logit.reg)
+tidy(logit.reg)
+```
+
+---
+
+### 🧠 Student Exercise 2 — Interpretation
+
+```{r}
+#| eval: false
+
+# Pick one continuous predictor.
+# How do you interpret its coefficient in terms of:
+# (a) log-odds
+# (b) odds
+```
+
+---
+
+## Odds ratios
+
+To aid interpretation, we exponentiate the coefficients.
+
+```{r}
+result.1 <- tidy(logit.reg, exponentiate = TRUE)
+
+result.1 %>% 
+  mutate(
+    estimate = round(estimate, 2),
+    p.value = round(p.value, 4)
+  )
+```
+
+A value greater than 1 indicates that an increase in the predictor increases the odds of being in class "Yes".
+
+---
+
+### 🧠 Student Exercise 3 — Odds ratios
+
+```{r}
+#| eval: false
+
+# Identify one predictor with an odds ratio greater than 1
+# and one with an odds ratio less than 1.
+# Explain what each means in plain language.
+```
+
+---
+
+## Predicted probabilities
+
+Predictions from a logistic regression are **probabilities**, not classes.
+
+```{r}
+trainpred.df <- augment(
+  logit.reg,
+  data = train.df,
+  type.predict = "response"
+)
+
+head(trainpred.df)
+```
+
+Alternatively:
+
+```{r}
+logit.reg.trpred <- predict(
+  logit.reg,
+  type = "response"
+)
+
+head(logit.reg.trpred)
+```
+
+---
+
+### 🧠 Student Exercise 4 — Classification logic
+
+```{r}
+#| eval: false
+
+# Suppose we use a cutoff of 0.5.
+# How would predicted probabilities be converted into class labels?
+# What happens if we lower the cutoff to 0.25?
+```
+
+---
+
+## Wrap-up
+
+Logistic regression models probabilities through a nonlinear transformation that ensures valid predictions between 0 and 1. Coefficients are interpreted through log-odds and odds ratios, and classification decisions depend critically on the choice of probability cutoff.
+
+In the next module, we will evaluate logistic models using confusion matrices, ROC curves, and lift charts.
+

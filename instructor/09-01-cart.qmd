@@ -1,0 +1,318 @@
+---
+title: "ch09-01-cart"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Learning Objectives
+
+By the end of this chapter, you should be able to:
+
+* Explain how classification trees partition the feature space
+* Identify why decision trees are prone to overfitting
+* Build classification trees using `rpart` and `caret`
+* Control tree complexity using depth, Cp, and pruning
+* Use cross-validation and ROC-based tuning for trees
+* Evaluate tree models using confusion matrices, ROC curves, and lift charts
+
+---
+
+## Classification Trees (CART)
+
+Classification trees are **rule-based models** that recursively split the predictor space into regions that are as homogeneous as possible with respect to the outcome.
+
+Trees are attractive because:
+
+* they are easy to visualize
+* they require little preprocessing
+* they handle nonlinearities and interactions automatically
+
+However, trees are also **high-variance models**, meaning they can overfit easily unless properly constrained.
+
+This chapter introduces CART using `rpart` and then implements trees within the `caret` framework.
+
+```{r}
+library(caret)
+library(tidyverse)
+library(skimr)
+library(rpart.plot)
+library(mlbadata)
+library(yardstick)
+```
+
+---
+
+## Example 1: Riding Mowers (Building Intuition)
+
+```{r}
+mower.df <- mlbadata::RidingMowers
+skim(mower.df)
+
+mower.df$Ownership <- factor(mower.df$Ownership,
+                             levels = c("Owner", "Nonowner"))
+```
+
+This dataset has:
+
+* two numeric predictors: `Income`, `Lot_Size`
+* a binary outcome: `Ownership`
+
+Because there are only two predictors, this dataset is ideal for **visualizing tree splits**.
+
+> **Important:** In `caret`, the **first factor level is treated as the target class**.
+> Always relevel factors deliberately.
+
+---
+
+## Train–Test Split
+
+One big question is whether to standardize data before or after the train-test split. Transformations should happen **after** the split and should be done on the training set (set used to fit the model). The standardization parameters should then be applied to the test set (that is, subtract the training set mean from the test set and diving the result by the standard deviation of the training set).
+
+The rationale for this is that the test set is totally new and unseen data. So nothing from it should influence the model building process.
+
+Tree-based models do **not** require feature scaling.
+However, train–test splitting must happen **before** any tuning or resampling.
+
+We next split the data in train and test set. Use the `createDataPartition()` function from `caret()` as it will maintain the class distribution in both, training and test sets.
+
+
+
+
+```{r}
+set.seed(107)
+trainRows <- createDataPartition(mower.df$Ownership,
+                                 p = 0.75,
+                                 list = FALSE)
+train.df <- mower.df[trainRows, ]
+test.df  <- mower.df[-trainRows, ]
+```
+
+---
+
+## A Shallow Tree (No Resampling)
+
+We will create a classification tree with `maxdepth = 2` using `caret`.
+
+In `caret` we first use the `trainControl()` function to define the type of sampling using the `method=` argument and other model tuning parameters.
+
+In `caret` the depth of the tree (maxdepth) can be tuned using the `rpart2` method.
+
+However, we will first run a tree without any resampling and just run one split.
+
+```{r}
+cntrl <- trainControl(method = "none")
+
+tree.1 <- train(Ownership ~ ., 
+                data = mower.df,
+                method = "rpart2",
+                trControl = cntrl,
+                tuneGrid = expand.grid(maxdepth = 1))
+
+tree.1
+rpart.plot(tree.1$finalModel, type = 1, extra = 1)
+```
+
+```{r}
+mower.df |> 
+  ggplot(aes(x = Income, y = Lot_Size, color = Ownership)) +
+  geom_point() +
+  geom_vline(xintercept = 59.4)
+```
+
+Each split corresponds to a **vertical or horizontal cut** in feature space.
+
+### Student Exercise 1 (Conceptual)
+
+* Why does a tree split correspond to a straight line?
+* What additional splits become possible if `maxdepth = 2`?
+* Which variable would you expect to split first, and why?
+
+---
+
+## Default Trees and Pruning in `caret`
+
+By default, `caret`:
+
+* draws 25 bootstrap samples
+* tests 3 values of the tuning parameter
+* selects the model with best average performance
+
+```{r}
+tree.2 <- train(Ownership ~ ., 
+                data = mower.df,
+                method = "rpart2")
+
+tree.2
+rpart.plot(tree.2$finalModel, fallen.leaves = FALSE, extra = 1)
+```
+
+For the `rpart` method, the tuning parameter is the **complexity parameter (`cp`)**, which penalizes tree growth.
+
+```{r}
+tree.3 <- train(Ownership ~ ., 
+                data = mower.df,
+                method = "rpart")
+
+rpart.plot(tree.3$finalModel, fallen.leaves = FALSE, extra = 1)
+```
+
+---
+
+## Full Tree and Overfitting
+
+To see why pruning matters, we grow a **fully unpenalized tree**.
+
+```{r}
+full.tree <- rpart(Ownership ~ ., 
+                   data = mower.df,
+                   method = "class",
+                   control = rpart.control(cp = 0, minsplit = 1))
+
+rpart.plot(full.tree, extra = 1, fallen.leaves = FALSE)
+```
+
+To classify a new record, we can drop it down the tree till we arrive at a decision node. We see that this tree has perfectly classified all the existing records. This is a sign of **overfitting**. In classifying on new data however, this model may not do as well due to overfitting. Next we address the issue of **overfitting** and also work with a more realistic problem.
+
+
+### Student Exercise 2 (Reasoning)
+
+* Why does lowering `cp` increase variance?
+* What would happen to test accuracy as the tree grows deeper?
+* Why might managers distrust a perfectly accurate training model?
+
+---
+
+## Example 2: Personal Loan Acceptance (Realistic Case)
+
+We now move to a higher-dimensional, noisier dataset.
+
+```{r}
+bank.df <- mlbadata::UniversalBank |> 
+  select(-ID, -ZIP.Code) |> 
+  mutate(
+    Loan = factor(Personal.Loan,
+                  levels = c(1, 0),
+                  labels = c("Yes", "No"))
+  )
+
+set.seed(1)
+indTrain <- createDataPartition(bank.df$Loan, p = 0.6, list = FALSE)
+train.df <- bank.df[indTrain, ]
+test.df  <- bank.df[-indTrain, ]
+```
+
+---
+
+## Full vs Default Tree
+
+```{r}
+full.tree.loan <- rpart(Loan ~ ., 
+                        data = train.df,
+                        method = "class",
+                        control = rpart.control(cp = 0, minsplit = 1))
+
+rpart.plot(full.tree.loan, extra = 1)
+```
+
+```{r}
+def.tree <- rpart(Loan ~ ., data = train.df, method = "class")
+rpart.plot(def.tree, extra = 1)
+```
+
+The default tree is smaller because `rpart` applies **implicit pruning**.
+
+### Student Exercise 3 (Hands-on)
+
+```{r eval=FALSE}
+# Compare training vs test accuracy for:
+# 1. full.tree.loan
+# 2. def.tree
+```
+
+---
+
+## CART with Cross-Validation (ROC Tuning)
+
+Accuracy can be misleading for imbalanced data.
+Instead, we tune using **ROC AUC**.
+
+```{r}
+cntrl <- trainControl(method = "repeatedcv",
+                      number = 10,
+                      repeats = 3,
+                      classProbs = TRUE,
+                      summaryFunction = twoClassSummary)
+
+tree.cv <- train(Loan ~ .,
+                 data = train.df,
+                 method = "rpart",
+                 trControl = cntrl,
+                 tuneLength = 10,
+                 metric = "ROC")
+
+tree.cv
+rpart.plot(tree.cv$finalModel, extra = 2)
+```
+
+```{r}
+tree.depth.cv <- train(Loan ~ .,
+                       data = train.df,
+                       method = "rpart2",
+                       trControl = cntrl,
+                       tuneLength = 10,
+                       metric = "ROC")
+
+rpart.plot(tree.depth.cv$finalModel, extra = 2)
+```
+
+---
+
+## Model Evaluation on Test Data
+
+```{r}
+results <- bind_rows(
+  bind_cols(model = "cp", 
+             predProb = predict(tree.cv, test.df, type = "prob")$Yes,
+             Actual = test.df$Loan),
+  bind_cols(model = "depth",
+             predProb = predict(tree.depth.cv, test.df, type = "prob")$Yes,
+             Actual = test.df$Loan)
+)
+```
+
+```{r}
+results |> 
+  group_by(model) |> 
+  roc_auc(Actual, predProb)
+```
+
+```{r}
+results |> 
+  group_by(model) |> 
+  roc_curve(Actual, predProb) |> 
+  autoplot()
+```
+
+```{r}
+results |> 
+  group_by(model) |> 
+  lift_curve(Actual, predProb) |> 
+  autoplot()
+```
+
+---
+
+## Takeaways
+
+* Trees partition the feature space using simple rules
+* Unrestricted trees massively overfit
+* Pruning controls variance at the cost of bias
+* Cross-validation stabilizes tree construction
+* ROC-based tuning is preferred for classification
+* Trees are interpretable but unstable
+
+➡These weaknesses motivate **Random Forests** and **Boosted Trees**, which we study next.
+

@@ -1,0 +1,372 @@
+---
+title: "03-02-visualization"
+author: "Dr. Jeff Jacob"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Chapter 3: Data Visualization
+
+In this unit, we recreate and extend the figures from Chapter 3 using the **ggplot ecosystem**.
+
+The goal is not just to reproduce charts, but to understand:
+
+* *why* a specific chart is appropriate,
+* *what patterns* it reveals,
+* and *how visualization supports modeling decisions later*.
+
+---
+
+## Load required packages
+
+```{r}
+#| echo: FALSE
+#| output: FALSE
+library(tidyverse)
+library(ggthemes)
+library(patchwork)
+library(forecast)
+library(caret)
+library(treemapify)
+library(treemap)
+library(GGally)
+library(ggcorrplot)
+library(readr)
+library(skimr)
+library(tsibble)
+library(fable)
+library(lubridate)
+library(feasts)
+library(mlbadata)
+```
+
+---
+
+## Load datasets
+
+```{r, echo = FALSE}
+housing.df <- read_csv("../BostonHousing.csv")
+
+amtrak.df <- as_tibble(mlbadata::Amtrak)
+bank.df <- as_tibble(mlbadata::UniversalBank)
+utilities.df <- as_tibble(mlbadata::Utilities)
+ebay.df <- as_tibble(mlbadata::eBayTreemap)
+
+glimpse(amtrak.df)
+```
+
+---
+
+## 1. Time Series Visualization
+
+Time series plots are essential for identifying:
+
+* trends
+* seasonality
+* structural breaks
+
+### Preparing the Amtrak data
+
+```{r}
+amtrak.df1 <- amtrak.df |> 
+  mutate(Month = dmy(Month))
+```
+
+At this stage, the data is a **date**, but not yet a proper monthly time index.
+
+```{r}
+amtrak.ts <- amtrak.df1 |> 
+  mutate(yrMth = yearmonth(Month)) |> 
+  select(-Month) |> 
+  as_tsibble(index = yrMth)
+
+glimpse(amtrak.ts)
+```
+
+> **Why this matters:**
+> tsibble objects explicitly encode time structure, which unlocks specialized plotting and modeling tools.
+
+---
+
+### Basic time series plot
+
+```{r}
+autoplot(amtrak.ts) +
+  labs(title = "Amtrak Monthly Ridership",
+       y = "Passengers (000s)")
+```
+
+Notice:
+
+* overall upward/downward movement
+* repeating seasonal patterns
+
+---
+
+### Seasonal and subseries plots
+
+```{r}
+amtrak.ts |> 
+  gg_season() +
+  labs(title = "Seasonal Patterns in Monthly Ridership")
+
+amtrak.ts |> 
+  gg_subseries() +
+  labs(title = "Monthly Subseries Plots")
+```
+
+These plots isolate **within-year seasonality**, which is critical for forecasting.
+
+---
+
+### Zooming in on specific periods
+
+```{r}
+amtrak.ts |> 
+  filter(year(yrMth) == 1996) |> 
+  autoplot()
+```
+
+---
+
+### Aggregating time series
+
+Instead of `group_by()`, tsibbles use `index_by()`.
+
+```{r}
+amtrak.ts |> 
+  index_by(yr = year(yrMth)) |> 
+  summarize(avg_rides = mean(Ridership)) |> 
+  autoplot(avg_rides) +
+  labs(y = "Average Annual Ridership")
+```
+
+```{r}
+amtrak.ts |> 
+  index_by(yr = year(yrMth)) |> 
+  summarize(total_rides = sum(Ridership)) |> 
+  filter(yr != 2004) |> 
+  autoplot(total_rides) +
+  labs(y = "Total Annual Ridership") +
+  scale_x_continuous(breaks = scales::extended_breaks(12)) +
+  theme(axis.text.x = element_text(angle = 60, vjust = 0.5))
+```
+
+---
+
+### Student exercise: time series insight
+
+```{r}
+#| eval: false
+# Identify one clear seasonal pattern
+# and one long-term trend from the Amtrak plots
+```
+
+---
+
+## 2. Cross-Sectional Visualization
+
+Cross-sectional plots help us compare groups and distributions at a single point in time.
+
+---
+
+### Bar plots for categorical comparisons
+
+```{r}
+housing.df |>
+  group_by(CHAS, CAT_MEDV) |> 
+  summarise(count = n())
+```
+
+```{r}
+housing.df |>
+  group_by(CHAS, CAT_MEDV) |> 
+  summarise(count = n()) |> 
+  ggplot(aes(x = factor(CHAS))) +
+  geom_bar(aes(y = count, fill = factor(CAT_MEDV)),
+           stat = "identity")
+```
+
+Try:
+
+* stacked bars → composition
+* filled bars → proportions
+* dodged bars → comparison
+
+---
+
+### Density vs histogram
+
+```{r}
+s1 <- housing.df |> 
+  ggplot(aes(x = MEDV)) +
+  geom_density(aes(color = factor(CHAS)))
+
+s2 <- housing.df |> 
+  ggplot(aes(x = MEDV)) +
+  geom_histogram(aes(fill = factor(CHAS)), alpha = 0.3)
+```
+
+```{r}
+s1 / s2
+```
+
+> **Interpretation tip:**
+> Histograms emphasize *counts*; densities emphasize *shape*.
+
+---
+
+### Combining density and histogram correctly
+
+```{r}
+housing.df |> 
+  ggplot(aes(x = MEDV, y = after_stat(density))) +
+  geom_histogram(aes(fill = factor(CHAS)), alpha = 0.25) +
+  geom_density(aes(color = factor(CHAS)), size = 1)
+```
+
+---
+
+### Box plots
+
+```{r}
+housing.df |> 
+  ggplot(aes(y = MEDV, x = factor(CHAS))) +
+  geom_boxplot() +
+  labs(title = "MEDV Distribution by CHAS")
+```
+
+Box plots quickly reveal:
+
+* median shifts
+* spread
+* outliers
+
+---
+
+## 3. Multivariate Visualization
+
+### Correlation heatmaps
+
+```{r}
+cormat <- data.frame(round(cor(housing.df), 2))
+cormat$xvar <- rownames(cormat)
+
+cor.tidy <- cormat |> 
+  pivot_longer(!xvar, names_to = "yvar", values_to = "corrval")
+```
+
+```{r}
+cor.tidy |> 
+  ggplot(aes(x = xvar, y = yvar, fill = corrval)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = corrval), size = 3) +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+> **Why this matters:**
+> Correlation plots guide feature selection and multicollinearity checks.
+
+---
+
+### Scatter plots with transformations
+
+```{r}
+gg7 <- housing.df |> 
+  ggplot(aes(x = CRIM, y = MEDV)) +
+  geom_point()
+
+gg8 <- housing.df |> 
+  ggplot(aes(x = CRIM, y = MEDV)) +
+  geom_point() +
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+```{r}
+gg7 + gg8
+```
+
+---
+
+### Labeling points
+
+```{r}
+utilities.df |> 
+  ggplot(aes(x = Sales, y = Fuel_Cost, label = Company)) +
+  geom_point() +
+  geom_text(nudge_x = 0.02, size = 2)
+```
+
+---
+
+### Overplotting and jitter
+
+```{r}
+bank.df |> 
+  ggplot(aes(x = Income, y = CCAvg)) +
+  geom_point()
+
+bank.df |> 
+  ggplot(aes(x = Income, y = CCAvg,
+             color = factor(Securities.Account))) +
+  geom_jitter(alpha = 0.5) +
+  scale_x_log10() +
+  scale_y_log10()
+```
+
+---
+
+### Parallel coordinate plots
+
+```{r}
+housing.df |>
+  mutate(CAT_MEDV = factor(CAT_MEDV)) |> 
+  ggparcoord(columns = 1:13,
+             groupColumn = 14,
+             scale = "uniminmax")
+```
+
+---
+
+### Treemaps: parts of a whole
+
+```{r}
+ebay.df$negative.feedback <- 1 * (ebay.df$Seller.Feedback < 0)
+
+ebay.tm <- ebay.df |>
+  group_by(Category, Sub.Category, Brand) |>
+  summarise(
+    Avg_HighBid = mean(High.Bid, na.rm = TRUE),
+    Avg_NegFeedback = mean(negative.feedback, na.rm = TRUE)
+  )
+```
+
+```{r}
+ebay.tm |> 
+  ggplot(aes(area = Avg_HighBid,
+             fill = Avg_NegFeedback,
+             label = Category,
+             subgroup = Sub.Category,
+             subgroup2 = Brand)) +
+  geom_treemap() +
+  geom_treemap_text(color = "white", grow = TRUE) +
+  scale_fill_viridis_c()
+```
+
+---
+
+## Key takeaways
+
+* Visualization is **analysis**, not decoration
+* Different plots answer different questions
+* Visuals guide:
+
+  * feature engineering
+  * transformations
+  * model choice
+* Always ask: *What decision does this plot support?*
+

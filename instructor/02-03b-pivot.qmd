@@ -1,0 +1,195 @@
+---
+title: "02-03b-pivots"
+format: html
+editor: visual
+---
+
+## Creating Excel-like Pivot tables in `dplyr`
+
+### Setting up the library
+
+```{r}
+library(tidyverse)
+```
+
+---
+
+## Create a toy dataset
+
+```{r}         
+ctr_data <- expand_grid(
+  yr = c(2000:2020),
+  ctr = c("ARB", "IDN", "IND"),
+  sect = c("agr", "mfg", "serv")
+) |> 
+  arrange(ctr, sect, yr)
+```
+
+``` {r}        
+ctr_data <- ctr_data |>
+  mutate(output = rnorm(nrow(ctr_data), rpois(1,5000), 150))
+```
+
+``` {r}        
+glimpse(ctr_data)
+```
+
+### Student exercise: inspecting the data
+
+```{r}         
+#| eval: false
+# Inspect ctr_data using:
+# glimpse()
+# summary()
+```
+
+---
+## Generate mean output by country and sector
+
+```{r}         
+ctr_data_avg <- ctr_data |> 
+  group_by(ctr, sect) |> 
+  summarise(meanY = mean(output))
+```
+
+```{r}           
+ctr_data_avg
+```
+
+### Student exercise: summarising
+
+```{r}           
+#| eval: false
+# Using ctr_data:
+# Group by ctr and sect
+# Compute the average output
+```
+
+------------------------------------------------------------------------
+
+## Creating Excel-style pivot tables with `pivot_wider()`
+
+Suppose we want the rows to represent countries and the columns to represent sectors.
+
+```{r}           
+pivot1 <- ctr_data_avg |> 
+  pivot_wider(
+    names_from = sect,
+    values_from = meanY
+  )
+      
+pivot1
+```
+
+### Student exercise: pivoting wider
+
+``` {r}          
+#| eval: false
+# Starting from ctr_data_avg:
+# Create a pivot table where:
+# rows are ctr
+# columns are sect
+# values are meanY
+```
+
+---
+
+## Pivot tables with multiple summary statistics
+
+``` {r}          
+ctr_data_avg2 <- ctr_data |> 
+  group_by(ctr, sect) |> 
+  summarise(meanY = mean(output),
+            stdY = sd(output))
+        
+ctr_data_avg2
+```
+
+```{r}           
+pivot2 <- ctr_data_avg2 |> 
+  pivot_wider(
+    names_from = sect,
+    values_from = c(meanY, stdY)
+  )
+       
+pivot2
+```
+
+By default, the column names are arranged as\
+`meanY_agr, meanY_mfg, meanY_serv, stdY_agr, ...`
+
+We can change this ordering.
+
+``` {r}          
+ctr_data_avg2 |> 
+  pivot_wider(
+    names_from = sect,
+    values_from = c(meanY, stdY),
+    names_vary = "slowest"
+  )
+```
+
+### Student exercise: multiple summaries
+
+```{r}           
+#| eval: false
+# Create a pivot table with:
+# meanY and stdY as values
+# sect as columns
+# ctr as rows
+# Try both default and names_vary = "slowest"
+```
+
+---
+## Converting pivot tables back to tidy format
+
+The pivot tables we created above are **not tidy**. Suppose we want to convert them back.
+
+### Using `pivot_longer()` on a simple pivot
+
+```{r}           
+pivot1 |> 
+  pivot_longer(
+    cols = agr:serv,
+    names_to = "sect",
+    values_to = "meanY"
+  )
+```
+
+---
+## Tidying a pivot with multiple value columns
+
+The case of `pivot2` is more complex because it contains multiple measures.
+
+```{r}           
+pivot3 <- pivot2 |> 
+  pivot_longer(
+    cols = !ctr,
+    names_to = "var",
+    values_to = "val"
+  )
+       
+pivot3
+```
+
+Now separate the variable names.
+
+```{r}           
+pivot3 <- pivot3 |> 
+  separate(var, c("measure", "sect"))
+       
+pivot3
+```
+
+Finally, pivot back to wide format.
+
+``` {r}          
+pivot3 |> 
+  pivot_wider(
+    names_from = measure,
+    values_from = val
+  )
+```
+
+This is back in tidy format and can be used for further analysis.
+

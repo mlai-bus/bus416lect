@@ -1,0 +1,254 @@
+---
+title: "Regression Methods"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Linear Regression
+
+### Learning objectives
+
+After completing this section, you should be able to:
+
+* Fit a multiple linear regression model using training data
+* Interpret regression output and goodness-of-fit statistics
+* Generate out-of-sample predictions using a validation set
+* Evaluate regression performance using RMSE and residual diagnostics
+* Visually diagnose potential model issues using residual plots
+
+---
+
+## Load the required libraries
+
+```{r}
+library(tidyverse)
+library(broom)
+library(forecast)
+library(caret)
+library(mlbadata)
+```
+
+---
+
+## Data preparation
+
+We will use the **Toyota Corolla** dataset to predict used car prices.
+
+To keep computation manageable and interpretation clear, we:
+
+* use the **first 1,000 observations**
+* select a subset of relevant variables
+* treat fuel type as a categorical variable
+
+```{r}
+car.df <- mlbadata::ToyotaCorolla
+
+# use first 1000 rows of data
+car.df <- car.df[1:1000, ]
+
+head(car.df)
+
+# convert fuel type to factor
+car.df$Fuel_Type <- as.factor(car.df$Fuel_Type)
+
+head(car.df)
+```
+
+Select variables for regression:
+
+```{r}
+selected.var <- c(3, 4, 7, 8, 9, 10, 12, 13, 14, 17, 18)
+car.df.sel <- car.df[, selected.var]
+```
+
+---
+
+### Student exercise 1: predictors
+
+```{r}
+#| eval: false
+# Which of the selected variables do you expect
+# to have the strongest relationship with Price?
+# Briefly explain why.
+```
+
+---
+
+## Train–validation split
+
+We partition the data into:
+
+* **training set (60%)** → model estimation
+* **validation set (40%)** → out-of-sample evaluation
+
+```{r}
+set.seed(1)
+
+trainInd <- createDataPartition(
+  car.df.sel$Price,
+  p = 0.6,
+  list = FALSE
+)
+
+train.df <- car.df.sel[trainInd, ]
+valid.df <- car.df.sel[-trainInd, ]
+```
+
+---
+
+### Student exercise 2: evaluation logic
+
+```{r}
+#| eval: false
+# Why do we evaluate model performance
+# on the validation set rather than
+# the training set?
+```
+
+---
+
+## Baseline multiple linear regression
+
+We begin with a **full model**, including all selected predictors.
+
+```{r}
+lm.1 <- lm(Price ~ ., data = train.df)
+```
+
+Model output:
+
+```{r}
+tidy(lm.1)
+```
+
+Goodness-of-fit statistics:
+
+```{r}
+glance(lm.1)
+glance(lm.1)$adj.r.squared
+```
+
+### Interpretation notes
+
+* Coefficients describe *partial* effects holding other variables constant
+* Adjusted (R^2) accounts for model complexity
+* At this stage, we are **not** performing feature selection
+
+---
+
+### Student exercise 3: interpretation
+
+```{r}
+#| eval: false
+# Identify one predictor with:
+# (a) a statistically significant effect
+# (b) an unexpected sign
+# Provide a possible explanation.
+```
+
+---
+
+## Out-of-sample prediction
+
+We now evaluate the model on **unseen data**.
+
+Rather than using `predict()` directly, we use `augment()` to:
+
+* attach predictions
+* retain residuals
+* keep everything in a single dataframe
+
+```{r}
+head(augment(lm.1, newdata = valid.df))
+```
+
+Rename columns for clarity:
+
+```{r}
+augment(lm.1, newdata = valid.df) |> 
+  rename(
+    Pricehat = .fitted,
+    resid = .resid
+  ) -> valid.pred
+```
+
+---
+
+## Model performance metrics
+
+We compute standard regression accuracy measures.
+
+```{r}
+postResample(valid.pred$Pricehat, valid.df$Price)
+```
+
+### Interpretation
+
+* RMSE measures average prediction error in original units
+* These metrics reflect **generalization performance**
+
+---
+
+### Student exercise 4: metric interpretation
+
+```{r}
+#| eval: false
+# Is RMSE easier to interpret than R-squared?
+# Why might a business user prefer RMSE?
+```
+
+---
+
+## Residual diagnostics
+
+Residual plots help diagnose:
+
+* nonlinearity
+* heteroskedasticity
+* outliers
+
+### Residuals vs fitted values
+
+```{r}
+valid.pred |> 
+  ggplot(aes(x = Pricehat, y = resid)) +
+  geom_point()
+```
+
+### Distribution of residuals
+
+```{r}
+valid.pred |> 
+  ggplot(aes(x = resid, y = ..density..)) +
+  geom_histogram()
+```
+
+---
+
+### Student exercise 5: diagnostics
+
+```{r}
+#| eval: false
+# Based on the residual plots:
+# (a) Do you see any patterns?
+# (b) What might these patterns suggest
+#     about model assumptions?
+```
+
+---
+
+## Key takeaways
+
+* Linear regression provides a strong baseline model
+* Evaluation must be done on unseen data
+* RMSE is a practical, interpretable metric
+* Residual plots reveal model limitations
+* This framework extends naturally to
+  feature selection and regularization
+
+```

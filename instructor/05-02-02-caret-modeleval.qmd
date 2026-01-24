@@ -1,0 +1,356 @@
+---
+title: "02-caret-model-eval"
+format: html
+editor: visual
+---
+
+## Model Evaluation with caret
+
+### Learning objectives
+
+After completing this module, you should be able to:
+
+- Distinguish between class-based and probability-based evaluation metrics
+- Compare multiple classification models under a common resampling framework
+- Interpret cross-validation results versus holdout test performance
+- Evaluate classifiers using confusion matrices, ROC curves, AUC, and lift charts
+- Select and refit a final model for deployment using optimal hyperparameters
+
+---
+
+## Overview
+
+In this tutorial, we focus on **model evaluation**, not on learning new algorithms.
+
+The key idea is that:
+- **Models are interchangeable**
+- **Evaluation frameworks are not**
+
+Some metrics depend on:
+- predicted class labels (confusion matrix)
+
+Others depend on:
+- predicted class probabilities (ROC, AUC, lift)
+
+---
+
+## Load required packages
+
+```{r}
+#| output: false 
+#| warning: false  
+library(caret) 
+library(tidyverse) 
+library(lattice)  
+library(mlbadata)
+library(yardstick)
+library(pROC)
+```
+
+---
+
+## Import and prepare the data
+
+```{r}
+bank.df <- mlbadata::UniversalBank
+
+bank.df$Personal.Loan <- factor(
+  bank.df$Personal.Loan,
+  labels = c("No", "Yes")
+) |> 
+  relevel(ref = "Yes")
+
+bank.df <- bank.df |> 
+  select(!c(ZIP.Code, ID)) |> 
+  mutate(
+    Education = factor(
+      Education,
+      levels = c(1, 2, 3),
+      labels = c("UGrad", "Grad", "Adv/Prof")
+    )
+  )
+```
+
+### Student exercise 1: outcome encoding
+
+```{r}
+#| eval: false
+# What would go wrong in caret if:
+# (a) Personal.Loan were left numeric?
+# (b) "No" were the first factor level?
+```
+
+---
+
+## Train–test partitioning
+
+```{r}
+set.seed(1234)
+
+trIndex <- createDataPartition(
+  bank.df$Personal.Loan,
+  p = 0.8,
+  list = FALSE
+)
+
+train.df <- bank.df[trIndex, ]
+test.df  <- bank.df[-trIndex, ]
+```
+
+### Student exercise 2: partition logic
+
+```{r}
+#| eval: false
+# Why should the test set never be used
+# during model tuning or resampling?
+```
+
+---
+
+## Model comparison setup
+
+We will compare three classification models:
+
+1. Elastic net logistic regression
+2. Random forest
+3. Gradient boosted trees
+
+At this stage, **the algorithms themselves are not the focus**.
+The focus is **how to evaluate them fairly**.
+
+---
+
+## Resampling and evaluation control
+
+```{r}
+set.seed(89)
+
+fitCntrl <- trainControl(
+  method = "repeatedcv",
+  number = 5,
+  repeats = 3,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  allowParallel = TRUE
+)
+```
+
+### Student exercise 3: metric choice
+
+```{r}
+#| eval: false
+# Why is ROC a better metric than accuracy
+# for this dataset?
+```
+
+---
+
+## Tuning grids
+
+```{r}
+grid_glm <- expand.grid(
+  alpha  = seq(0, 1, length = 5),
+  lambda = seq(0.01, 0.1, length = 3)
+)
+
+grid_rf <- expand.grid(
+  mtry = seq(1, 4)
+)
+```
+
+---
+
+## Train the models
+
+```{r}
+mod_enet <- train(
+  Personal.Loan ~ .,
+  data = train.df,
+  trControl = fitCntrl,
+  method = "glmnet",
+  tuneGrid = grid_glm,
+  metric = "ROC"
+)
+
+mod_rf <- train(
+  Personal.Loan ~ .,
+  data = train.df,
+  trControl = fitCntrl,
+  method = "rf",
+  tuneGrid = grid_rf,
+  metric = "ROC"
+)
+
+mod_gbm <- train(
+  Personal.Loan ~ .,
+  data = train.df,
+  trControl = fitCntrl,
+  method = "gbm",
+  tuneLength = 5,
+  metric = "ROC",
+  verbose = FALSE
+)
+```
+
+---
+
+## Cross-validation performance comparison
+
+```{r}
+perfm_compare <- resamples(
+  list(
+    ENet = mod_enet,
+    RandForest = mod_rf,
+    SGBM = mod_gbm
+  )
+)
+
+summary(perfm_compare)
+```
+
+### Student exercise 4: CV interpretation
+
+```{r}
+#| eval: false
+# Why should we not select a model
+# solely based on resampling performance?
+```
+
+---
+
+## Final evaluation on the test set
+
+```{r}
+enet_hat <- predict(mod_enet, newdata = test.df, type = "prob")
+rf_hat   <- predict(mod_rf,   newdata = test.df, type = "prob")
+gbm_hat  <- predict(mod_gbm,  newdata = test.df, type = "prob")
+```
+
+Convert probabilities to predicted classes:
+
+```{r}
+enet_hat$predClass <- colnames(enet_hat)[max.col(enet_hat)] |> 
+  factor(levels = c("Yes", "No"))
+
+rf_hat$predClass <- colnames(rf_hat)[max.col(rf_hat)] |> 
+  factor(levels = c("Yes", "No"))
+
+gbm_hat$predClass <- colnames(gbm_hat)[max.col(gbm_hat)] |> 
+  factor(levels = c("Yes", "No"))
+```
+
+---
+
+## Confusion matrix (class-based)
+
+```{r}
+confusionMatrix(
+  data = rf_hat$predClass,
+  reference = test.df$Personal.Loan
+)
+```
+
+### Student exercise 5: metric tradeoffs
+
+```{r}
+#| eval: false
+# If false positives were more costly than
+# false negatives, would this confusion
+# matrix still be acceptable?
+```
+
+---
+
+## Probability-based evaluation
+
+```{r}
+enet_hat$actualClass <- test.df$Personal.Loan
+rf_hat$actualClass   <- test.df$Personal.Loan
+gbm_hat$actualClass  <- test.df$Personal.Loan
+```
+
+Combine results:
+
+```{r}
+mod_hat <- rbind(
+  cbind(model = "enet", enet_hat),
+  cbind(model = "rf",   rf_hat),
+  cbind(model = "gbm",  gbm_hat)
+)
+```
+
+---
+
+## Lift curves
+
+```{r}
+lift_data <- mod_hat |> 
+  group_by(model) |> 
+  lift_curve(actualClass, Yes)
+
+autoplot(lift_data)
+```
+
+### Student exercise 6: business interpretation
+
+```{r}
+#| eval: false
+# Which model would you choose if:
+# (a) you could only contact 30% of customers?
+# (b) your goal was maximizing capture rate?
+```
+
+---
+
+## ROC curves and AUC
+
+```{r}
+data_ROC <- mod_hat |> 
+  group_by(model) |> 
+  roc_curve(actualClass, Yes)
+
+autoplot(data_ROC)
+```
+
+```{r}
+roc_table <- mod_hat |> 
+  group_by(model) |> 
+  roc_auc(actualClass, Yes)
+
+roc_table
+```
+
+---
+
+## Deploying the best model
+
+Once a model is selected, we refit it **once** using all available data.
+
+```{r}
+fitCntrl <- trainControl(
+  method = "none",
+  classProbs = TRUE,
+  allowParallel = TRUE
+)
+
+best_rf <- train(
+  Personal.Loan ~ .,
+  data = bank.df,
+  trControl = fitCntrl,
+  method = "rf",
+  tuneGrid = mod_rf$bestTune,
+  metric = "ROC",
+  verbose = FALSE
+)
+```
+
+---
+
+## Key takeaways
+
+* Evaluation must be separated from modeling
+* ROC and lift are probability-based metrics
+* Cross-validation ≠ final performance
+* Test data is used once
+* Deployment requires fixed hyperparameters
+

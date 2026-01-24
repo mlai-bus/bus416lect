@@ -1,0 +1,321 @@
+---
+title: "03-Regularized Regression"
+format: html
+editor: visual
+---
+
+## Regularized (Penalized) Regression
+
+### Learning objectives
+
+After completing this module, you should be able to:
+
+- Explain why regularization improves predictive performance
+- Distinguish between LASSO, Ridge, and Elastic Net penalties
+- Tune penalized regression models using cross-validation in `caret`
+- Interpret coefficient shrinkage and variable selection
+- Compare regularized models using validation-set RMSE
+
+---
+
+## Load the libraries
+
+```{r}
+library(tidyverse) 
+library(broom) 
+library(forecast) 
+library(caret) 
+library(mlbadata)
+library(fastDummies)
+```
+
+---
+
+## Data preparation
+
+As before, we use the first 1000 observations from the **Toyota Corolla** dataset and the same predictor set for comparability with earlier models.
+
+```{r}
+car.df <- mlbadata::ToyotaCorolla
+
+# use first 1000 rows
+car.df <- car.df[1:1000, ]
+
+# convert fuel type to factor
+car.df$Fuel_Type <- as.factor(car.df$Fuel_Type)
+
+selected.var <- c(3, 4, 7, 8, 9, 10, 12, 13, 14, 17, 18)
+car.df.sel <- car.df[, selected.var]
+
+# create full-rank dummy variables
+car.df.dum <- dummy_columns(
+  car.df.sel,
+  remove_first_dummy = TRUE,
+  remove_selected_columns = TRUE
+)
+```
+
+---
+
+## Train–validation split
+
+```{r}
+set.seed(1)
+trainInd <- createDataPartition(car.df.dum$Price, p = 0.6, list = FALSE)
+
+train.df <- car.df.dum[trainInd, ]
+valid.df <- car.df.dum[-trainInd, ]
+```
+
+---
+
+## Why regularization?
+
+In earlier chapters, **feature selection** was equivalent to setting some coefficients exactly equal to zero. Regularization generalizes this idea by **shrinking coefficients toward zero**, rather than dropping predictors outright.
+
+Key differences from stepwise selection:
+
+* Regularization is **continuous**, not discrete
+* All predictors compete simultaneously
+* Coefficients are penalized based on magnitude, not count
+* Typically yields **lower variance** models
+
+Predictors are standardized so that penalties apply equally across variables.
+
+---
+
+## Penalty formulations
+
+Let the sum of squared errors be:
+
+[
+SSE = \sum_{i=1}^N \left(y_i - \beta_0 - \sum_{j=1}^K \beta_j x_{ij}\right)^2
+]
+
+### LASSO (L1 penalty)
+
+[
+SSE + \lambda \sum_{j=1}^K |\beta_j|
+]
+
+* Encourages **sparse models**
+* Can set coefficients exactly to zero
+* Performs variable selection automatically
+
+### Ridge (L2 penalty)
+
+[
+SSE + \lambda \sum_{j=1}^K \beta_j^2
+]
+
+* Shrinks coefficients smoothly
+* Keeps all predictors
+* Works well with correlated predictors
+
+### Elastic Net
+
+[
+SSE + \lambda \left( \alpha \sum_{j=1}^K |\beta_j| +
+\frac{1-\alpha}{2} \sum_{j=1}^K \beta_j^2 \right)
+]
+
+* Combines LASSO and Ridge
+* (\alpha = 1) → LASSO
+* (\alpha = 0) → Ridge
+
+---
+
+### Student exercise 1: intuition check
+
+```{r}
+#| eval: false
+# Before running the models:
+# Which predictors do you expect LASSO to drop?
+# Which do you expect Ridge to keep but shrink?
+```
+
+---
+
+## LASSO regression
+
+We tune (\lambda) using 5-fold cross-validation.
+
+```{r}
+Cntrl <- trainControl(
+  method = "cv",
+  number = 5,
+  allowParallel = TRUE
+)
+
+lassoGrid <- expand.grid(
+  alpha = 1,
+  lambda = 10^seq(-3, 5, length.out = 100)
+)
+```
+
+```{r}
+set.seed(14)
+lasso <- train(
+  Price ~ .,
+  data = train.df,
+  trControl = Cntrl,
+  tuneGrid = lassoGrid,
+  method = "glmnet",
+  preProc = c("center", "scale")
+)
+
+lasso
+```
+
+---
+
+### Inspecting the LASSO model
+
+```{r}
+lasso$bestTune
+coef(lasso$finalModel, s = lasso$bestTune$lambda)
+```
+
+---
+
+### Model performance
+
+```{r}
+accuracy(predict(lasso, train.df), train.df$Price)
+accuracy(predict(lasso, newdata = valid.df), valid.df$Price)
+```
+
+---
+
+### Student exercise 2: interpretation
+
+```{r}
+#| eval: false
+# Why does LASSO set some coefficients exactly to zero,
+# while Ridge does not?
+```
+
+---
+
+## Ridge regression
+
+Now we repeat the process with (\alpha = 0).
+
+```{r}
+ridgeGrid <- expand.grid(
+  alpha = 0,
+  lambda = 10^seq(-3, 5, length.out = 100)
+)
+
+set.seed(14)
+ridge <- train(
+  Price ~ .,
+  data = train.df,
+  method = "glmnet",
+  trControl = Cntrl,
+  tuneGrid = ridgeGrid,
+  preProc = c("center", "scale")
+)
+
+ridge$bestTune
+coef(ridge$finalModel, s = ridge$bestTune$lambda)
+```
+
+```{r}
+accuracy(predict(ridge, newdata = valid.df), valid.df$Price)
+```
+
+---
+
+### Student exercise 3: comparison
+
+```{r}
+#| eval: false
+# Why might Ridge outperform LASSO
+# when predictors are highly correlated?
+```
+
+---
+
+## Elastic Net (your turn)
+
+Elastic Net tunes **both** (\alpha) and (\lambda).
+
+```{r}
+enetGrid <- expand.grid(
+  alpha = seq(0, 1, 0.1),
+  lambda = 10^seq(-3, 5, length.out = 100)
+)
+```
+
+```{r}
+set.seed(14)
+enet <- train(
+  Price ~ .,
+  data = train.df,
+  method = "glmnet",
+  trControl = Cntrl,
+  tuneGrid = enetGrid,
+  preProc = c("center", "scale")
+)
+
+enet$bestTune
+```
+
+---
+
+### Student exercise 4: model comparison
+
+```{r}
+#| eval: false
+# Compare validation RMSE for:
+# 1. LASSO
+# 2. Ridge
+# 3. Elastic Net
+#
+# Which would you deploy and why?
+```
+
+---
+
+## Final model for deployment
+
+Once hyperparameters are chosen, we refit the model **without resampling** using the full dataset.
+
+```{r}
+Cntrl <- trainControl(
+  method = "none",
+  allowParallel = TRUE
+)
+
+enetGrid <- expand.grid(
+  alpha = enet$bestTune$alpha,
+  lambda = enet$bestTune$lambda
+)
+
+final_enet <- train(
+  Price ~ .,
+  data = car.df.dum,
+  method = "glmnet",
+  trControl = Cntrl,
+  tuneGrid = enetGrid,
+  preProc = c("center", "scale")
+)
+```
+
+```{r}
+# Example scoring
+# predict(final_enet, newdata = mynewdata)
+```
+
+---
+
+## Key takeaways
+
+* Regularization reduces overfitting by shrinking coefficients
+* LASSO performs variable selection
+* Ridge stabilizes estimates under multicollinearity
+* Elastic Net balances sparsity and stability
+* Hyperparameters must be tuned via cross-validation
+
+

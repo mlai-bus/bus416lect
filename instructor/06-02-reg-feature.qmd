@@ -1,0 +1,312 @@
+---
+title: "02-Feature Selection"
+author: "Dr. Jeff Jacob"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Feature Selection
+
+### Learning objectives
+
+After completing this section, you should be able to:
+
+* Explain why feature selection helps reduce overfitting
+* Distinguish between forward, backward, and stepwise selection
+* Use `caret` to implement sequential feature selection methods
+* Compare models using RMSE and parsimony
+* Evaluate feature-selected models on a validation set
+
+---
+
+## Motivation: Why feature selection?
+
+Including too many predictors can lead to **overfitting**—a model that fits training data well but performs poorly on new data. Feature selection aims to retain predictors that meaningfully improve prediction accuracy while removing redundant or noisy variables.
+
+Model selection is typically guided by:
+
+* Validation-set RMSE
+* Information criteria (AIC, BIC)
+* Interpretability and parsimony
+
+There are two broad approaches:
+
+1. **Sequential selection** (add/remove predictors)
+2. **Regularization** (penalize complexity)
+
+This chapter focuses on **sequential selection**.
+
+---
+
+## Load the required libraries
+
+```{r}
+library(tidyverse)
+library(broom)
+library(forecast)
+library(caret)
+library(mlbadata)
+library(fastDummies)
+```
+
+---
+
+## Data preparation
+
+We continue using the **Toyota Corolla** dataset to ensure comparability with the baseline regression model.
+
+```{r}
+car.df <- mlbadata::ToyotaCorolla
+
+# use first 1000 rows
+car.df <- car.df[1:1000, ]
+
+# convert fuel type to factor
+car.df$Fuel_Type <- as.factor(car.df$Fuel_Type)
+
+selected.var <- c(3, 4, 7, 8, 9, 10, 12, 13, 14, 17, 18)
+car.df.sel <- car.df[, selected.var]
+
+glimpse(car.df.sel)
+```
+
+---
+
+### Student exercise 1: intuition check
+
+```{r}
+#| eval: false
+# Which variables do you expect to be dropped
+# during feature selection?
+# Which do you expect to survive?
+```
+
+---
+
+## Creating full-rank dummy variables
+
+To avoid perfect multicollinearity, we explicitly create **full-rank dummy variables** by removing one category per factor.
+
+```{r}
+car.df.dum <- dummy_columns(
+  car.df.sel,
+  remove_first_dummy = TRUE,
+  remove_selected_columns = TRUE
+)
+```
+
+---
+
+## Train–validation split
+
+```{r}
+set.seed(1)
+trainInd <- createDataPartition(car.df.dum$Price, p = 0.6, list = FALSE)
+
+train.df <- car.df.dum[trainInd, ]
+valid.df <- car.df.dum[-trainInd, ]
+```
+
+---
+
+## Sequential feature selection methods
+
+### Overview
+
+* **Forward selection**: start with intercept, add predictors
+* **Backward elimination**: start with full model, remove predictors
+* **Stepwise (sequential)**: combination of both
+
+⚠️ These methods optimize prediction, **not causal interpretation**.
+
+---
+
+## Forward selection (default tuning)
+
+```{r}
+set.seed(123)
+forwd.1 <- train(
+  Price ~ ., 
+  data = train.df,
+  method = "leapForward"
+)
+forwd.1
+```
+
+The model with the **lowest cross-validated RMSE** is chosen automatically.
+
+```{r}
+summary(forwd.1)
+
+forwd.1$results$RMSE
+which.min(forwd.1$results$RMSE)
+
+coef(forwd.1$finalModel, which.min(forwd.1$results$RMSE))
+```
+
+---
+
+### Student exercise 2: interpretation
+
+```{r}
+#| eval: false
+# Why might forward selection fail
+# to detect interacting predictors?
+```
+
+---
+
+## Forward selection with expanded search
+
+```{r}
+optimal.n <- expand.grid(nvmax = 1:10)
+
+set.seed(123)
+forwd.2 <- train(
+  Price ~ .,
+  data = train.df,
+  method = "leapForward",
+  tuneGrid = optimal.n
+)
+forwd.2
+```
+
+Extract selected predictors:
+
+```{r}
+nvchosen <- which.min(forwd.2$results$RMSE)
+
+frd.names <- names(
+  coef(forwd.2$finalModel, nvchosen)
+)[-1]
+
+forward <- list(
+  vars = frd.names,
+  rmse = min(forwd.2$results$RMSE)
+)
+```
+
+---
+
+## Backward elimination
+
+```{r}
+set.seed(123)
+bckwrd <- train(
+  Price ~ .,
+  data = train.df,
+  method = "leapBackward",
+  tuneGrid = optimal.n
+)
+bckwrd
+```
+
+```{r}
+bckwrd.names <- names(
+  coef(bckwrd$finalModel, which.min(bckwrd$results$RMSE))
+)[-1]
+
+backward <- list(
+  vars = bckwrd.names,
+  rmse = min(bckwrd$results$RMSE)
+)
+```
+
+---
+
+### Student exercise 3: comparison
+
+```{r}
+#| eval: false
+# Why might forward and backward selection
+# return the same model?
+```
+
+---
+
+## Stepwise (sequential) selection
+
+```{r}
+set.seed(123)
+seqsel <- train(
+  Price ~ .,
+  data = train.df,
+  method = "leapSeq",
+  tuneGrid = optimal.n
+)
+seqsel
+```
+
+```{r}
+seqsel.names <- names(
+  coef(seqsel$finalModel, which.min(seqsel$results$RMSE))
+)[-1]
+
+stepwise <- list(
+  vars = seqsel.names,
+  rmse = min(seqsel$results$RMSE)
+)
+```
+
+---
+
+## Comparing selected models
+
+```{r}
+selection.list <- list(
+  forward = forward,
+  backward = backward,
+  stepwise = stepwise
+)
+
+selection.list
+```
+
+### Interpretation
+
+* Stepwise selection minimizes RMSE
+* Forward/backward offer **greater parsimony**
+* Small RMSE differences often favor simpler models
+
+---
+
+### Student exercise 4: model choice
+
+```{r}
+#| eval: false
+# Which model would you deploy?
+# Justify your answer using
+# both RMSE and number of predictors.
+```
+
+---
+
+## Validation-set performance
+
+```{r}
+Price.for <- predict(forwd.2, newdata = valid.df)
+for_sel <- postResample(Price.for, valid.df$Price)
+
+Price.back <- predict(bckwrd, newdata = valid.df)
+back_sel <- postResample(Price.back, valid.df$Price)
+
+Price.seq <- predict(seqsel, newdata = valid.df)
+seq_sel <- postResample(Price.seq, valid.df$Price)
+
+rbind(for_sel, back_sel, seq_sel)
+```
+
+---
+
+## Key takeaways
+
+* Feature selection improves generalization
+* Sequential methods are fast and interpretable
+* RMSE differences must be weighed against complexity
+* These methods precede **regularization**, not replace it
+

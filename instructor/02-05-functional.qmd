@@ -1,0 +1,262 @@
+---
+title: "02-05-functional_prog"
+format: html
+editor: visual
+---
+
+## Functional Programming
+
+What if we wanted the mean or maximum value from **each column** of a dataframe?
+
+In base R, we might solve this with a `for` loop. In modern R, we instead use **functional programming**, which replaces loops with functions that operate *iteratively* over data.
+
+```{r}
+library(tidyverse)
+library(mlbadata)
+```
+
+------------------------------------------------------------------------
+
+## What is functional programming?
+
+A **functional** is a function that:
+
+-   takes a **function** as an input
+-   applies it repeatedly
+-   returns a structured output
+
+Functional programming emphasizes:
+
+-   clarity
+-   fewer side effects
+-   fewer indexing errors
+-   better readability
+
+In this lesson, we focus on the `map()` family of functions.
+
+------------------------------------------------------------------------
+
+## The `map()` function
+
+`map()` takes a vector or list and applies a function to **each element**, returning a **list**.
+
+```{r}
+args(map)
+```
+
+------------------------------------------------------------------------
+
+## A simple motivating example
+
+```{r}
+mydata <- tibble(
+  one   = 1:10,
+  two   = 11:20,
+  three = 21:30
+)
+```
+
+```{r}
+mydata |> 
+  map(mean)
+```
+
+Each column is passed to `mean()` one at a time.
+
+**Key idea:**
+
+-   input → tibble (list of columns)
+-   output → list
+
+------------------------------------------------------------------------
+
+### Student exercise: basic mapping
+
+```{r}
+#| eval: false
+# Use map() to compute the maximum value of each column in mydata
+```
+
+------------------------------------------------------------------------
+
+## Understanding `map_*()` variants
+
+The base `map()` always returns a **list**. Variants control the output type.
+
+| Function    | Output type      |
+|-------------|------------------|
+| `map()`     | list             |
+| `map_dbl()` | numeric (double) |
+| `map_chr()` | character        |
+| `map_lgl()` | logical          |
+| `map_df()`  | data frame       |
+
+------------------------------------------------------------------------
+
+## Returning numeric vectors with `map_dbl()`
+
+```{r}
+mean_dbl <- mydata |> 
+  map_dbl(mean)
+
+mean_dbl
+```
+
+```{r}
+str(mean_dbl)
+```
+
+Because the output is a numeric vector, we can immediately reuse it.
+
+```{r}
+mydata |> 
+  map_dbl(mean) |> 
+  mean()
+```
+
+------------------------------------------------------------------------
+
+### Student exercise: numeric output
+
+```{r}
+#| eval: false
+# Use map_dbl() to compute:
+# - the median of each column in mydata
+# - then compute the maximum of those medians
+```
+
+------------------------------------------------------------------------
+
+## Using `map_*()` for dataset inspection
+
+Functional programming is useful for **quick diagnostics**.
+
+```{r}
+roxbury_df <- mlbadata::WestRoxbury
+```
+
+```{r}
+roxbury_df |> 
+  map_chr(typeof)
+```
+
+This shows the **low-level storage type** of each column.
+
+```{r}
+roxbury_df |> 
+  map_chr(class)
+```
+
+------------------------------------------------------------------------
+
+## Writing your own functions
+
+You can pass **any function** into `map()`.
+
+```{r}
+my_triple <- function(x) x * 3
+```
+
+```{r}
+mydata |> 
+  map(my_triple)
+```
+
+------------------------------------------------------------------------
+
+## Anonymous (lambda) functions
+
+When the function is simple and used once, we can write it inline.
+
+```{r}
+mydata |> 
+  map(~ .x * 3)
+```
+
+Here:
+
+-   `.x` represents one column at a time
+-   `~` defines an anonymous function
+
+------------------------------------------------------------------------
+
+### Student exercise: anonymous functions
+
+```{r}
+#| eval: false
+# Use map() with an anonymous function
+# Square each column of mydata
+```
+
+------------------------------------------------------------------------
+
+## Preserving structure with `modify()`
+
+`map()` always returns a list. If we want to return the **same structure as the input**, we use `modify()`.
+
+```{r}
+mydata |> 
+  modify(~ .x * 3)
+```
+
+This returns a tibble.
+
+------------------------------------------------------------------------
+
+### Student exercise: structure preservation
+
+```{r}
+#| eval: false
+# Use modify() to:
+# - subtract 5 from every column
+```
+
+------------------------------------------------------------------------
+
+## Functional programming inside `summarise(across())`
+
+Functional programming becomes extremely powerful inside `dplyr`.
+
+```{r}
+roxbury_df |> 
+  group_by(REMODEL) |> 
+  summarise(
+    across(
+      contains("AREA"),
+      list(mean = mean, stdev = sd)
+    )
+  )
+```
+
+This works **only if there are no missing values**.
+
+------------------------------------------------------------------------
+
+## Handling missing values with anonymous functions
+
+```{r}
+roxbury_df |> 
+  group_by(REMODEL) |> 
+  summarise(
+    across(
+      contains("AREA"),
+      list(
+        mean  = ~ mean(.x, na.rm = TRUE),
+        stdev = ~ sd(.x, na.rm = TRUE)
+      )
+    )
+  )
+```
+
+Here, functional programming allows us to **inject arguments** cleanly.
+
+------------------------------------------------------------------------
+
+### Student exercise: robust summaries
+
+```{r}
+#| eval: false
+# Group roxbury_df by REMODEL
+# Compute mean and sd for variables containing "VALUE"
+# Ensure missing values are handled correctly
+```

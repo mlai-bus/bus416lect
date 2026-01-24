@@ -1,0 +1,227 @@
+---
+title: "04-01-summ-cor"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Cleaning and Exploratory Diagnostics
+
+### Learning objectives
+
+* Convert binary variables into modeling-ready factors
+* Generate multiple exploratory plots programmatically
+* Compare loop-based and functional approaches to plotting
+* Arrange multiple ggplot objects on a single page
+* Use visualization to inform modeling decisions
+
+---
+
+## Load required libraries
+
+```{r}
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(psych)
+library(hablar)
+library(skimr)
+library(purrr)
+library(readr)
+library(patchwork)
+library(mlbadata)
+```
+
+---
+
+## Converting variables to factors
+
+```{r}
+housing.df <- mlbadata::BostonHousing
+
+cols <- c("CHAS", "CAT.MEDV")
+
+housing.df[cols] <- map(
+  housing.df[cols],
+  factor,
+  levels = c(1, 0),
+  labels = c("Yes", "No")
+)
+
+head(housing.df)
+```
+
+```{r}
+glimpse(housing.df)
+```
+
+---
+
+## Generating multiple exploratory plots
+
+```{r}
+selected.vars <- c("MEDV", "CHAS", "RM", "ZN", "PTRATIO", "AGE", "CRIM")
+df1 <- housing.df[, selected.vars]
+```
+
+---
+
+## Loop-based density plots (solved)
+
+```{r}
+for (i in 3:ncol(df1)) {
+  print(
+    df1 |> 
+      ggplot(aes(x = df1[, i], color = CHAS)) +
+      geom_density() +
+      labs(x = colnames(df1[i]))
+  )
+}
+```
+
+---
+
+### Student exercise (solved): histogram version
+
+```{r}
+for (i in 3:ncol(df1)) {
+  print(
+    df1 |> 
+      ggplot(aes(x = df1[, i], fill = CHAS)) +
+      geom_histogram(alpha = 0.4, bins = 30) +
+      labs(x = colnames(df1[i]))
+  )
+}
+```
+
+---
+
+## Combining plots on a single page
+
+```{r}
+plot_list <- list()
+
+for (i in 3:ncol(df1)) {
+  plot_list[[i - 2]] <- df1 |> 
+    ggplot(aes(x = df1[, i], color = CHAS)) +
+    geom_density() +
+    labs(x = colnames(df1[i]))
+}
+
+wrap_plots(plot_list, ncol = 2)
+```
+
+---
+
+## Functional programming approach (solved)
+
+```{r}
+plot_list2 <- map(
+  names(df1[3:ncol(df1)]),
+  function(col_name) {
+    ggplot(df1, aes(x = .data[[col_name]], color = CHAS)) +
+      geom_density() +
+      labs(x = col_name)
+  }
+)
+
+wrap_plots(plot_list2, ncol = 2)
+```
+
+---
+
+### Student exercise (solved): histogram + fill
+
+```{r}
+plot_list2_hist <- map(
+  names(df1[3:ncol(df1)]),
+  function(col_name) {
+    ggplot(df1, aes(x = .data[[col_name]], fill = CHAS)) +
+      geom_histogram(alpha = 0.4, bins = 30) +
+      labs(x = col_name)
+  }
+)
+
+wrap_plots(plot_list2_hist, ncol = 2)
+```
+
+---
+
+## Scatter plots vs MEDV (solved)
+
+```{r}
+plot_list3 <- map(
+  names(df1[3:ncol(df1)]),
+  function(col_name) {
+    ggplot(df1, aes(x = .data[[col_name]], y = MEDV)) +
+      geom_point(aes(color = CHAS)) +
+      labs(x = col_name)
+  }
+)
+
+wrap_plots(plot_list3, ncol = 2)
+```
+
+---
+
+### Student exercise (solved): add regression line
+
+```{r}
+plot_list4 <- map(
+  names(df1[3:ncol(df1)]),
+  function(col_name) {
+    ggplot(df1, aes(x = .data[[col_name]], y = MEDV)) +
+      geom_point(aes(color = CHAS)) +
+      geom_smooth(method = "lm", se = FALSE) +
+      labs(x = col_name)
+  }
+)
+
+wrap_plots(plot_list4, ncol = 2)
+```
+
+---
+
+## Box plots (solved)
+
+```{r}
+df1 |> 
+  ggplot(aes(y = MEDV, x = CHAS)) +
+  geom_boxplot()
+```
+
+---
+
+## Homework – example solution
+
+Below is **one acceptable solution** using a functional approach.
+
+```{r}
+boxplot_list <- map(
+  names(df1[3:ncol(df1)]),
+  function(col_name) {
+    ggplot(df1, aes(x = CHAS, y = .data[[col_name]])) +
+      geom_boxplot() +
+      labs(y = col_name)
+  }
+)
+
+wrap_plots(boxplot_list, ncol = 2)
+```
+
+
+
+---
+
+## Key takeaways
+
+* Programmatic plotting scales to high-dimensional data
+* Functional programming integrates naturally with ggplot
+* Visualization is a diagnostic step for modeling
+* Clean EDA reduces downstream modeling errors
+
+

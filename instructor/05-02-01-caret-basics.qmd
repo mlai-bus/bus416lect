@@ -1,0 +1,364 @@
+---
+title: "01-caret-basics"
+format: html
+editor: visual
+---
+
+## Caret basics: a unified modeling framework
+
+### Learning objectives
+
+After completing this module, you should be able to:
+
+- Explain what the `caret` package abstracts and why it is useful
+- Prepare outcome variables correctly for classification in caret
+- Perform stratified train–test splits for classification problems
+- Apply preprocessing correctly without data leakage
+- Train classification models using cross-validation
+- Evaluate and compare models using ROC-based metrics
+- Tune model hyperparameters using grid search
+
+---
+
+## What is `caret`?
+
+`caret` (Classification And REgression Training) is a **wrapper framework** that provides:
+
+- a unified syntax for over 200 ML algorithms
+- consistent handling of:
+  - preprocessing
+  - resampling
+  - tuning
+  - performance evaluation
+
+Rather than learning dozens of model-specific APIs, we learn **one workflow**.
+
+---
+
+## Installing and loading data
+
+The datasets used here come from the *Machine Learning for Business Analytics* textbook.
+
+```{r}
+#| eval: false
+#| output: false
+#| warning: false
+library(devtools)
+
+#install_github("gedeck/mlba/mlba", force = TRUE)
+# or the forked version
+#install_github("econjjacob/mlbadata", force = TRUE)
+```
+
+```{r}
+#| output: false
+#| warning: false
+library(caret)
+library(tidyverse)
+library(lattice)
+library(mlbadata)
+```
+
+---
+
+## Data structure and outcome preparation
+
+We use the **Universal Bank** dataset.
+
+```{r}
+bank.df <- mlbadata::UniversalBank
+str(bank.df)
+```
+
+### Important caret rule
+
+For **classification** in caret:
+
+* the outcome **must be a factor**
+* the **first level is the target class**
+
+Here, `Personal.Loan` is numeric (`0` / `1`).
+We convert it carefully.
+
+```{r}
+bank.df$Personal.Loan <- factor(
+  bank.df$Personal.Loan,
+  labels = c("No", "Yes")
+) |> 
+  relevel(ref = "Yes")
+```
+
+---
+
+### Predictor cleanup
+
+```{r}
+bank.df <- bank.df |> 
+  select(!c(ZIP.Code, ID)) |> 
+  mutate(
+    Education = factor(
+      Education,
+      levels = c(1, 2, 3),
+      labels = c("UGrad", "Grad", "Adv/Prof")
+    )
+  )
+
+str(bank.df)
+```
+
+---
+
+### Student check
+
+```{r}
+#| eval: false
+# Why must the outcome variable be a factor
+# before using caret for classification?
+```
+
+---
+
+## Data partitioning (stratified)
+
+We reserve **20% for testing**, using stratified sampling.
+
+```{r}
+set.seed(1234)
+
+trIndex <- createDataPartition(
+  bank.df$Personal.Loan,
+  p = 0.8,
+  list = FALSE
+)
+
+train.df <- bank.df[trIndex, ]
+test.df  <- bank.df[-trIndex, ]
+```
+
+Check class balance:
+
+```{r}
+print(paste0("Full data: ", mean(bank.df$Personal.Loan == "Yes")))
+print(paste0("Training set: ", mean(train.df$Personal.Loan == "Yes")))
+print(paste0("Test set: ", mean(test.df$Personal.Loan == "Yes")))
+```
+
+---
+
+## Preprocessing without data leakage
+
+**Rule:** preprocessing must be learned on the training set only.
+
+### Explicit preprocessing approach
+
+```{r}
+train.vals <- preProcess(train.df, method = c("center", "scale"))
+
+train.trnf <- predict(train.vals, train.df)
+test.trnf  <- predict(train.vals, test.df)
+
+glimpse(test.trnf)
+```
+
+Note:
+
+* numeric variables were standardized
+* factor variables were untouched
+
+---
+
+### Student check
+
+```{r}
+#| eval: false
+# Why is it incorrect to estimate preprocessing
+# parameters using the full dataset?
+```
+
+---
+
+## Model training with `train()`
+
+The `train()` function:
+
+* performs resampling
+* tunes hyperparameters
+* selects the optimal model
+* estimates expected performance
+
+### Define resampling strategy
+
+```{r}
+set.seed(89)
+
+fitCntrl <- trainControl(
+  method = "repeatedcv",
+  number = 5,
+  repeats = 3,
+  allowParallel = TRUE
+)
+```
+
+---
+
+## Basic logistic regression
+
+```{r}
+logistic1 <- train(
+  Personal.Loan ~ Age + Income + CreditCard,
+  data = train.trnf,
+  method = "glm",
+  family = "binomial",
+  trControl = fitCntrl
+)
+
+logistic1
+summary(logistic1)
+```
+
+---
+
+## Using ROC as the optimization metric
+
+Probability-based metrics require extra settings.
+
+```{r}
+fitCntrl <- trainControl(
+  method = "repeatedcv",
+  number = 10,
+  repeats = 3,
+  allowParallel = TRUE,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary
+)
+```
+
+```{r}
+logistic2 <- train(
+  Personal.Loan ~ Age + Income + CreditCard,
+  data = train.trnf,
+  method = "glm",
+  family = "binomial",
+  trControl = fitCntrl,
+  metric = "ROC"
+)
+
+logistic2
+summary(logistic2)
+```
+
+---
+
+## Test set evaluation
+
+```{r}
+test.trnf.pred <- predict(logistic2, newdata = test.trnf)
+
+confusionMatrix(
+  data = test.trnf.pred,
+  reference = test.trnf$Personal.Loan
+)
+```
+
+---
+
+## In-place preprocessing with `train()`
+
+Caret can perform preprocessing internally.
+
+```{r}
+logistic3 <- train(
+  Personal.Loan ~ Age + Income + CreditCard,
+  data = train.df,
+  preProc = c("center", "scale"),
+  method = "glm",
+  family = "binomial",
+  trControl = fitCntrl,
+  metric = "ROC"
+)
+
+logistic3
+```
+
+```{r}
+test.pred <- predict(logistic3, newdata = test.df)
+
+confusionMatrix(
+  data = test.pred,
+  reference = test.df$Personal.Loan
+)
+```
+
+Compare predictions:
+
+```{r}
+table(test.pred == test.trnf.pred)
+```
+
+---
+
+## Hyperparameter tuning: penalized logistic regression
+
+Elastic net combines:
+
+* **ridge** (L2 penalty)
+* **lasso** (L1 penalty)
+
+```{r}
+glmn_grid <- expand.grid(
+  .alpha  = seq(0, 1, 0.1),
+  .lambda = seq(0.01, 0.3, length = 20)
+)
+
+nrow(glmn_grid)
+```
+
+```{r}
+glmnetMod <- train(
+  Personal.Loan ~ .,
+  data = train.df,
+  preProc = c("center", "scale"),
+  trControl = fitCntrl,
+  method = "glmnet",
+  tuneGrid = glmn_grid,
+  metric = "ROC"
+)
+
+glmnetMod
+```
+
+---
+
+## Model interpretation
+
+```{r}
+predictors(glmnetMod)
+varImp(glmnetMod)
+```
+
+---
+
+## Final evaluation
+
+```{r}
+glmnClass <- predict(glmnetMod, newdata = test.df)
+
+confusionMatrix(
+  data = glmnClass,
+  reference = test.df$Personal.Loan
+)
+```
+
+---
+
+## Key takeaways
+
+* caret enforces **good ML hygiene**
+* outcome encoding matters
+* preprocessing must avoid leakage
+* cross-validation drives model selection
+* ROC is preferred under class imbalance
+* regularization controls model complexity
+
+
+

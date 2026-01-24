@@ -1,0 +1,287 @@
+---
+title: "04-01-summ-cor"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Data Cleaning and Exploratory Diagnostics
+
+### Learning objectives
+
+After completing this section, you should be able to:
+
+* Convert binary variables into factors appropriate for modeling
+* Generate multiple exploratory plots programmatically
+* Compare loop-based and functional-programming approaches for visualization
+* Arrange multiple ggplot objects into a single view
+* Use exploratory plots to diagnose relationships prior to modeling
+
+These steps are a **bridge between raw data and modeling decisions**.
+
+---
+
+## Load required libraries
+
+```{r}
+#| echo: false
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(psych)
+library(hablar)
+library(skimr)
+library(purrr)
+library(readr)
+library(patchwork)
+library(mlbadata)
+```
+
+---
+
+## Converting variables to factors
+
+We begin by loading the Boston Housing dataset and converting two binary variables into factors:
+
+* `CHAS` (Charles River indicator)
+* `CAT.MEDV` (categorized median value)
+
+```{r}
+housing.df <- mlbadata::BostonHousing
+
+cols <- c("CHAS", "CAT.MEDV")
+
+housing.df[cols] <- map(
+  housing.df[cols],
+  factor,
+  levels = c(1, 0),
+  labels = c("Yes", "No")
+)
+
+head(housing.df)
+```
+
+### Why this matters
+
+* Factors preserve categorical meaning
+* Many modeling tools treat the **first factor level as the reference**
+* This choice affects coefficient interpretation later
+
+```{r}
+glimpse(housing.df)
+```
+
+---
+
+## Generating multiple exploratory plots
+
+Before modeling, we often want to explore **how several predictors relate to the outcome**.
+
+We begin by selecting a subset of variables for exploratory plotting.
+
+```{r}
+selected.vars <- c("MEDV", "CHAS", "RM", "ZN", "PTRATIO", "AGE", "CRIM")
+df1 <- housing.df[, selected.vars]
+```
+
+---
+
+## Using a loop to generate multiple plots
+
+The following loop creates **one density plot per variable**, colored by `CHAS`.
+
+```{r}
+for (i in 3:ncol(df1)) {
+  print(
+    df1 |> 
+      ggplot(aes(x = df1[, i], color = CHAS)) +
+      geom_density() +
+      labs(x = colnames(df1[i]))
+  )
+}
+```
+
+Each plot is rendered separately and can be viewed using the **Plots pane** navigation arrows.
+
+This approach is:
+
+* explicit
+* easy to read
+* common in early-stage exploratory work
+
+---
+
+### Student exercise: loop comprehension
+
+```{r}
+#| eval: false
+# Modify the loop above to:
+# 1. Change geom_density() to geom_histogram()
+# 2. Adjust transparency using alpha
+```
+
+---
+
+## Combining multiple plots on a single page
+
+To view multiple plots at once, we need to:
+
+1. Store plots in a list
+2. Arrange them using `wrap_plots()`
+
+### Step 1: initialize an empty list
+
+```{r}
+plot_list <- list()
+```
+
+### Step 2: populate the list with ggplot objects
+
+```{r}
+for (i in 3:ncol(df1)) {
+  plot_list[[i - 2]] <- df1 |> 
+    ggplot(aes(x = df1[, i], color = CHAS)) +
+    geom_density() +
+    labs(x = colnames(df1[i]))
+}
+```
+
+### Step 3: arrange the plots
+
+```{r}
+wrap_plots(plot_list, ncol = 2)
+```
+
+---
+
+## A detour into functional programming
+
+The loop above works well, but R also provides **functional programming tools** that often lead to cleaner, more flexible code.
+
+Here, we use `map()` to achieve the same result.
+
+```{r}
+plot_list2 <- map(
+  names(df1[3:ncol(df1)]),
+  function(col_name) {
+    ggplot(df1, aes(x = .data[[col_name]], color = CHAS)) +
+      geom_density() +
+      labs(x = col_name)
+  }
+)
+
+wrap_plots(plot_list2, ncol = 2)
+```
+
+### How this works
+
+* `map()` iterates over column names
+* `.data[[col_name]]` safely extracts the column by name
+* Each iteration returns a ggplot object
+* The result is a **list of plots**
+
+This approach is:
+
+* more concise
+* easier to extend
+* safer when variable names change
+
+---
+
+### Student exercise: functional plots
+
+```{r}
+#| eval: false
+# Modify the map() version to:
+# 1. Use geom_histogram()
+# 2. Change color to fill
+```
+
+---
+
+## Scatter plots with programmatic variable selection
+
+We now explore **relationships between predictors and MEDV**.
+
+```{r}
+plot_list3 <- map(
+  names(df1[3:ncol(df1)]),
+  function(col_name) {
+    ggplot(df1, aes(x = .data[[col_name]], y = MEDV)) +
+      geom_point(aes(color = CHAS)) +
+      labs(x = col_name)
+  }
+)
+
+wrap_plots(plot_list3, ncol = 2)
+```
+
+These plots help identify:
+
+* linear vs non-linear patterns
+* group differences
+* potential transformations
+
+---
+
+### Student exercise: adding trend lines
+
+Add a regression line **without confidence intervals**.
+
+```{r}
+#| eval: false
+plot_list4 <- map(
+  names(df1[3:ncol(df1)]),
+  function(col_name) {
+    ggplot(df1, aes(x = .data[[col_name]], y = MEDV)) +
+      geom_point(aes(color = CHAS)) +
+      geom_smooth(method = "lm", se = FALSE) +
+      labs(x = col_name)
+  }
+)
+
+wrap_plots(plot_list4, ncol = 2)
+```
+
+---
+
+## Box plots for categorical comparison
+
+Finally, box plots allow us to compare **distributions across groups**.
+
+```{r}
+df1 |> 
+  ggplot(aes(y = MEDV, x = CHAS)) +
+  geom_boxplot()
+```
+
+---
+
+## Homework
+
+Create **multiple box plots** comparing `MEDV` against several predictors:
+
+* Use either:
+
+  * a `for` loop, **or**
+  * a `map()`-based approach
+* Arrange all plots on a single page
+* Save the final output as a **PDF**
+* Upload the PDF to Moodle
+
+```{r}
+# Your code here
+```
+
+---
+
+## Key takeaways
+
+* Exploratory plots guide modeling decisions
+* Loops and functionals are both valuable tools
+* Programmatic plotting scales to high-dimensional data
+* Visualization is a diagnostic step, not decoration
